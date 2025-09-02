@@ -1,0 +1,51 @@
+# Server Configuration
+NODE_ENV=development
+PORT=9092
+API_BASE_URL=http://localhost:9092
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
+
+# JWT Configuration
+JWT_SECRET=your-super-secret-jwt-key-at-least-16-characters
+JWT_EXPIRES_IN=2h
+REFRESH_TOKEN_EXPIRES_IN=7d
+
+# MongoDB Configuration
+MONGODB_URI=mongodb://localhost:27017/confab_lms
+
+# Email Configuration
+# Choose your email provider: 'resend' or 'nodemailer'
+EMAIL_PROVIDER=resend
+
+# Resend Configuration (if using Resend)
+RESEND_API_KEY=re_your_resend_api_key_here
+RESEND_FROM_EMAIL=CONFAB <noreply@theconfab.org>
+
+# Nodemailer Configuration (if using Nodemailer)
+# Provider options: 'gmail', 'outlook', 'yahoo', 'smtp'
+NODEMAILER_PROVIDER=gmail
+NODEMAILER_USER=your-email@gmail.com
+NODEMAILER_PASSWORD=your-app-password
+NODEMAILER_FROM=CONFAB <noreply@theconfab.org>
+
+# For custom SMTP server (if NODEMAILER_PROVIDER=smtp)
+NODEMAILER_HOST=smtp.gmail.com
+NODEMAILER_PORT=587
+NODEMAILER_SECURE=false
+NODEMAILER_REJECT_UNAUTHORIZED=false
+
+# Cloudinary Configuration
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+# App Configuration
+INITIAL_ADMIN_EMAIL=admin@example.com
+PRODUCT_NAME=CONFAB Purpose Discovery LMS
+CLIENT_URL=http://localhost:3000
+
+# Feature Flags
+FEATURE_FLAGS_MESSAGING=true
+FEATURE_FLAGS_REPORTS=true
+
+# Logging
+LOG_LEVEL=info
