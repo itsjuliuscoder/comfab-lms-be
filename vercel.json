@@ -1,9 +1,14 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/index.js",
-      "use": "@vercel/node"
+  "functions": {
+    "api/health.js": {
+      "maxDuration": 30
+    },
+    "api/test.js": {
+      "maxDuration": 30
+    },
+    "api/users/bulk-invite-template.js": {
+      "maxDuration": 30
     }
-  ]
+  }
 }
