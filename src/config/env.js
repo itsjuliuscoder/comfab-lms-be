@@ -10,10 +10,10 @@ const envSchema = z.object({
   API_BASE_URL: z.string().url().default('http://localhost:9092'),
   
   // CORS
-  CORS_ALLOWED_ORIGINS: z.string().default('https://lms.theconfab.org, http://localhost:3000'),
+  CORS_ALLOWED_ORIGINS: z.string().default('https://lms.theconfab.org'),
   
   // JWT
-  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters').default('confaBLm$%&25'),
+  JWT_SECRET: z.string().min(10, 'JWT_SECRET must be at least 10 characters').default('confaBLm$%&25'),
   JWT_EXPIRES_IN: z.string().default('24h'),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('30d'),
   
@@ -45,7 +45,7 @@ const envSchema = z.object({
   // App
   INITIAL_ADMIN_EMAIL: z.string().email('Invalid initial admin email').default('admin@theconfab.org'),
   PRODUCT_NAME: z.string().default('CONFAB LMS'),
-  CLIENT_URL: z.string().url().default('http://localhost:3000'),
+  CLIENT_URL: z.string().url().default('https://lms.theconfab.org'),
   
   // Feature Flags
   FEATURE_FLAGS_MESSAGING: z.string().transform(val => val === 'true').default('true'),

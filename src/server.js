@@ -159,6 +159,7 @@ const startServer = async () => {
     // Start listening
     const server = app.listen(config.server.port, () => {
       logger.info(`🚀 Server running on port ${config.server.port}`);
+      logger.info(`This is the allowed origins: ${config.cors.allowedOrigins}`)
       logger.info(`📊 Environment: ${config.server.nodeEnv}`);
       logger.info(`🌐 API Base URL: ${config.server.apiBaseUrl}`);
       logger.info(`📧 Email Service: ${config.email.provider} (${config.email.provider === 'nodemailer' ? config.email.nodemailer.from : config.email.resend.fromEmail || 'Not configured'})`);
