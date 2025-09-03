@@ -47,8 +47,8 @@ app.use(cors({
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: config.rateLimit.windowMs,
+  max: config.rateLimit.maxRequests,
   message: {
     ok: false,
     error: {
@@ -66,8 +66,8 @@ app.use('/api/', limiter);
 app.use(compression());
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: `${config.upload.maxFileSizeMB}mb` }));
+app.use(express.urlencoded({ extended: true, limit: `${config.upload.maxFileSizeMB}mb` }));
 
 // Logging middleware
 app.use(morgan('combined', {

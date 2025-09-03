@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import { config } from '../../../config/env.js';
 import { requireAuth } from '../../../middleware/auth.js';
 import { requireAdmin, requireRole } from '../../../middleware/rbac.js';
 import { validateBody, validateQuery } from '../../../middleware/validation.js';
@@ -31,7 +32,7 @@ const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: config.upload.maxFileSizeMB * 1024 * 1024, // Use environment variable
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
@@ -46,7 +47,7 @@ const upload = multer({
 const excelUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit for Excel files
+    fileSize: config.upload.maxFileSizeMB * 1024 * 1024, // Use environment variable
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [

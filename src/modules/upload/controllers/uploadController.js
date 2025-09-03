@@ -1,4 +1,5 @@
 import multer from 'multer';
+import { config } from '../../../config/env.js';
 import { uploadToCloudinary, deleteFromCloudinary } from '../../../config/cloudinary.js';
 import { successResponse, errorResponse } from '../../../utils/response.js';
 import { logger } from '../../../utils/logger.js';
@@ -29,7 +30,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB limit
+    fileSize: config.upload.maxFileSizeMB * 1024 * 1024, // Use environment variable
   },
   fileFilter,
 });

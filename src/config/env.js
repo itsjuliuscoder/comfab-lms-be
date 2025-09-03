@@ -10,7 +10,7 @@ const envSchema = z.object({
   API_BASE_URL: z.string().url().default('http://localhost:9092'),
   
   // CORS
-  CORS_ALLOWED_ORIGINS: z.string().default('https://lms.theconfab.org').concat(', http://localhost:3000'),
+  CORS_ALLOWED_ORIGINS: z.string().default('https://lms.theconfab.org, http://localhost:3000'),
   
   // JWT
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters').default('confaBLm$%&25'),
@@ -18,7 +18,7 @@ const envSchema = z.object({
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('30d'),
   
   // MongoDB
-  MONGODB_URI: z.string().default('mongodb://localhost:27017/confab_lms'),
+  MONGODB_URI: z.string().default('mongodb+srv://confabUser:uMEsDcjd5xpYmPF4@confabdb.jfwrngi.mongodb.net/confabLMS'),
   
   // Email Configuration
   EMAIL_PROVIDER: z.enum(['resend', 'nodemailer']).default('nodemailer'),
@@ -44,7 +44,7 @@ const envSchema = z.object({
   
   // App
   INITIAL_ADMIN_EMAIL: z.string().email('Invalid initial admin email').default('admin@theconfab.org'),
-  PRODUCT_NAME: z.string().default('CONFAB Purpose Discovery LMS'),
+  PRODUCT_NAME: z.string().default('CONFAB LMS'),
   CLIENT_URL: z.string().url().default('http://localhost:3000'),
   
   // Feature Flags
@@ -53,6 +53,16 @@ const envSchema = z.object({
   
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+  
+  // Rate Limiting
+  RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('900000'), // 15 minutes
+  RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default('100'),
+  
+  // File Upload
+  MAX_FILE_SIZE_MB: z.string().transform(Number).default('10'),
+  
+  // Security
+  SESSION_SECRET: z.string().default('confab-session-secret-change-in-production'),
 });
 
 const envParse = envSchema.safeParse(process.env);
@@ -116,5 +126,15 @@ export const config = {
   },
   logging: {
     level: env.LOG_LEVEL,
+  },
+  rateLimit: {
+    windowMs: env.RATE_LIMIT_WINDOW_MS,
+    maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
+  },
+  upload: {
+    maxFileSizeMB: env.MAX_FILE_SIZE_MB,
+  },
+  security: {
+    sessionSecret: env.SESSION_SECRET,
   },
 };
