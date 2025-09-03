@@ -1,14 +1,3 @@
 {
-  "version": 2,
-  "functions": {
-    "api/health.js": {
-      "maxDuration": 30
-    },
-    "api/test.js": {
-      "maxDuration": 30
-    },
-    "api/users/bulk-invite-template.js": {
-      "maxDuration": 30
-    }
-  }
+  "version": 2
 }
