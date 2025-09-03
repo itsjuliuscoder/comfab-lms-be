@@ -6,6 +6,7 @@ export default function handler(req, res) {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'production',
-    vercel: true
+    vercel: true,
+    endpoint: '/health'
   });
 }
