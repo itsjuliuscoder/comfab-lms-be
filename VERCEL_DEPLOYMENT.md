@@ -67,6 +67,8 @@ CLOUDINARY_API_SECRET=your_api_secret
    vercel --prod
    ```
 
+**Note**: The new Vercel configuration uses a catch-all route (`api/[...path].js`) which automatically handles all API requests.
+
 ### Method 2: Vercel Dashboard
 
 1. **Connect Repository**:
