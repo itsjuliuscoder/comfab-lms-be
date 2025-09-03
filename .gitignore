@@ -5,10 +5,6 @@ node_modules
 .env
 .env.example
 .env.template
-vercel.env.example
-
-# Vercel
-.vercel
 
 # Logs
 *.log

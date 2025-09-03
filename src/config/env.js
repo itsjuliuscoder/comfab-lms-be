@@ -10,7 +10,7 @@ const envSchema = z.object({
   API_BASE_URL: z.string().url().default('http://localhost:9092'),
   
   // CORS
-  CORS_ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
+  CORS_ALLOWED_ORIGINS: z.string().default('https://lms.theconfab.org').concat(', http://localhost:3000'),
   
   // JWT
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters').default('confaBLm$%&25'),
