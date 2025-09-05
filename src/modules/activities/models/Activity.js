@@ -137,7 +137,6 @@ const activitySchema = new mongoose.Schema({
     },
     id: {
       type: mongoose.Schema.Types.ObjectId,
-      refPath: 'target.model',
       required: false, // Allow null for system actions
     },
     model: {

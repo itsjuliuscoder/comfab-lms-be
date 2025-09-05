@@ -2,11 +2,49 @@ import { v4 as uuidv4 } from 'uuid';
 import ActivityService from '../modules/activities/services/activityService.js';
 import { logger } from '../utils/logger.js';
 
+// Test function to validate Activity model
+async function testActivityModel() {
+  try {
+    const testActivity = {
+      action: 'TEST_ACTION',
+      actor: {
+        userId: null,
+        name: 'Test User',
+        email: 'test@example.com',
+        role: 'ANONYMOUS'
+      },
+      target: {
+        type: 'SYSTEM',
+        id: null,
+        model: null,
+        name: 'Test Target'
+      },
+      context: {
+        ipAddress: '127.0.0.1',
+        userAgent: 'Test Agent',
+        endpoint: 'TEST /test',
+        method: 'GET'
+      },
+      status: 'SUCCESS'
+    };
+    
+    const result = await ActivityService.logActivity(testActivity);
+    logger.info('Activity model test successful:', !!result);
+    return true;
+  } catch (error) {
+    logger.error('Activity model test failed:', error);
+    return false;
+  }
+}
+
 /**
  * Activity Logging Middleware
  * Automatically logs all API actions for audit and analytics purposes
  */
 export const activityLogger = (options = {}) => {
+  // Test Activity model on first use
+  let modelTested = false;
+  
   const {
     // Actions to exclude from logging
     excludeActions = [
@@ -34,6 +72,12 @@ export const activityLogger = (options = {}) => {
   } = options;
 
   return async (req, res, next) => {
+    // Test Activity model on first use
+    if (!modelTested) {
+      modelTested = true;
+      await testActivityModel();
+    }
+    
     const startTime = Date.now();
     const requestId = uuidv4();
     
@@ -211,6 +255,17 @@ export const activityLogger = (options = {}) => {
           metadata = { duration, statusCode: res.statusCode, isSuccess, timestamp: new Date().toISOString() };
         }
 
+        // Validate required fields before logging
+        if (!action || !actor || !target) {
+          logger.warn('Skipping activity logging due to missing required fields:', {
+            hasAction: !!action,
+            hasActor: !!actor,
+            hasTarget: !!target,
+            endpoint: context?.endpoint
+          });
+          return;
+        }
+
         // Log the activity
         logger.debug('Attempting to log activity:', {
           action,
@@ -257,7 +312,14 @@ export const activityLogger = (options = {}) => {
         });
         
         // Also log the original error for debugging
-        logger.error('Original error details:', error);
+        logger.error('Original error details:', {
+          name: error?.name,
+          message: error?.message,
+          stack: error?.stack,
+          toString: error?.toString(),
+          type: typeof error,
+          constructor: error?.constructor?.name
+        });
       }
     });
 
