@@ -9,7 +9,7 @@ import { config } from './config/env.js';
 import { connectDatabase } from './config/database.js';
 import { logger } from './utils/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
-import { activityLogger } from './middleware/activityLogger.js';
+import activityLogger from './middleware/activityLogger.js';
 
 // Import routes
 import authRoutes from './modules/auth/routes/auth.js';

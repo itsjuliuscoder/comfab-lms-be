@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { ActivityService } from '../modules/activities/services/activityService.js';
+import ActivityService from '../modules/activities/services/activityService.js';
 import { logger } from '../utils/logger.js';
 
 /**
