@@ -150,38 +150,75 @@ export const activityLogger = (options = {}) => {
         }
 
         // Determine action type
-        action = getActionType(req, customActionMapping);
+        try {
+          action = getActionType(req, customActionMapping);
+        } catch (error) {
+          logger.error('Error in getActionType:', error);
+          action = 'UNKNOWN_ACTION';
+        }
         
         // Get target information
-        target = getTargetInfo(req, responseData);
+        try {
+          target = getTargetInfo(req, responseData);
+        } catch (error) {
+          logger.error('Error in getTargetInfo:', error);
+          target = { type: 'UNKNOWN', id: null, model: null, name: 'Unknown' };
+        }
         
         // Get actor information
-        actor = getActorInfo(req);
+        try {
+          actor = getActorInfo(req);
+        } catch (error) {
+          logger.error('Error in getActorInfo:', error);
+          actor = { userId: null, name: 'Unknown', email: 'unknown@system', role: 'ANONYMOUS' };
+        }
         
         // Get context information
-        context = {
-          ipAddress: requestData.ip,
-          userAgent: requestData.userAgent,
-          sessionId: requestData.sessionId,
-          requestId: requestData.requestId,
-          endpoint: `${req.method} ${req.path}`,
-          method: req.method
-        };
+        try {
+          context = {
+            ipAddress: requestData.ip,
+            userAgent: requestData.userAgent,
+            sessionId: requestData.sessionId,
+            requestId: requestData.requestId,
+            endpoint: `${req.method} ${req.path}`,
+            method: req.method
+          };
+        } catch (error) {
+          logger.error('Error creating context:', error);
+          context = { ipAddress: 'Unknown', userAgent: 'Unknown', endpoint: 'Unknown', method: 'Unknown' };
+        }
 
         // Get changes information (for write operations)
-        changes = getChangesInfo(req, responseData);
+        try {
+          changes = getChangesInfo(req, responseData);
+        } catch (error) {
+          logger.error('Error in getChangesInfo:', error);
+          changes = {};
+        }
 
         // Get metadata
-        metadata = {
-          requestData,
-          responseData,
-          duration,
-          statusCode: res.statusCode,
-          isSuccess,
-          timestamp: new Date().toISOString()
-        };
+        try {
+          metadata = {
+            requestData,
+            responseData,
+            duration,
+            statusCode: res.statusCode,
+            isSuccess,
+            timestamp: new Date().toISOString()
+          };
+        } catch (error) {
+          logger.error('Error creating metadata:', error);
+          metadata = { duration, statusCode: res.statusCode, isSuccess, timestamp: new Date().toISOString() };
+        }
 
         // Log the activity
+        logger.debug('Attempting to log activity:', {
+          action,
+          actor: actor?.name,
+          target: target?.name || target?.type,
+          endpoint: context?.endpoint
+        });
+        
         const activityResult = await ActivityService.logActivity({
           action,
           actor,
@@ -213,8 +250,14 @@ export const activityLogger = (options = {}) => {
           action: action || 'Unknown',
           actor: actor?.name || 'Unknown',
           target: target?.name || target?.type || 'Unknown',
-          endpoint: context?.endpoint || req?.path || 'Unknown'
+          endpoint: context?.endpoint || req?.path || 'Unknown',
+          method: req?.method || 'Unknown',
+          path: req?.path || 'Unknown',
+          statusCode: res?.statusCode || 'Unknown'
         });
+        
+        // Also log the original error for debugging
+        logger.error('Original error details:', error);
       }
     });
 
