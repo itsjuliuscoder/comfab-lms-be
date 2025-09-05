@@ -163,13 +163,20 @@ export const activityLogger = (options = {}) => {
       let action, target, actor, context, changes, metadata;
       
       try {
+        logger.debug('Starting activity logging process for:', req.path);
+        
         const duration = Date.now() - startTime;
         const isSuccess = res.statusCode >= 200 && res.statusCode < 400;
         
         // Determine if we should log this response
         const shouldLog = (isSuccess && logSuccess) || (!isSuccess && logFailure);
         
-        if (!shouldLog) return;
+        if (!shouldLog) {
+          logger.debug('Skipping activity logging - shouldLog is false');
+          return;
+        }
+        
+        logger.debug('Proceeding with activity logging...');
 
         // Capture response data
         responseData = {
@@ -274,6 +281,8 @@ export const activityLogger = (options = {}) => {
           endpoint: context?.endpoint
         });
         
+        logger.debug('About to call ActivityService.logActivity...');
+        
         const activityResult = await ActivityService.logActivity({
           action,
           actor,
@@ -288,6 +297,8 @@ export const activityLogger = (options = {}) => {
           } : null,
           duration
         });
+        
+        logger.debug('ActivityService.logActivity completed, result:', !!activityResult);
 
         if (!activityResult) {
           logger.warn('Activity logging returned null', {
@@ -299,27 +310,25 @@ export const activityLogger = (options = {}) => {
         }
 
       } catch (error) {
-        logger.error('Failed to log activity in middleware', {
-          error: error.message,
-          stack: error.stack,
-          action: action || 'Unknown',
-          actor: actor?.name || 'Unknown',
-          target: target?.name || target?.type || 'Unknown',
-          endpoint: context?.endpoint || req?.path || 'Unknown',
-          method: req?.method || 'Unknown',
-          path: req?.path || 'Unknown',
-          statusCode: res?.statusCode || 'Unknown'
-        });
+        // Log the error in a simpler way to avoid any issues with error object structure
+        logger.error('Failed to log activity in middleware');
+        logger.error('Error message:', error?.message || 'No message');
+        logger.error('Error stack:', error?.stack || 'No stack');
+        logger.error('Error type:', typeof error);
+        logger.error('Error constructor:', error?.constructor?.name || 'Unknown');
+        logger.error('Action:', action || 'Unknown');
+        logger.error('Actor:', actor?.name || 'Unknown');
+        logger.error('Target:', target?.name || target?.type || 'Unknown');
+        logger.error('Endpoint:', context?.endpoint || req?.path || 'Unknown');
+        logger.error('Method:', req?.method || 'Unknown');
+        logger.error('Status Code:', res?.statusCode || 'Unknown');
         
-        // Also log the original error for debugging
-        logger.error('Original error details:', {
-          name: error?.name,
-          message: error?.message,
-          stack: error?.stack,
-          toString: error?.toString(),
-          type: typeof error,
-          constructor: error?.constructor?.name
-        });
+        // Try to stringify the error object
+        try {
+          logger.error('Full error object:', JSON.stringify(error, null, 2));
+        } catch (stringifyError) {
+          logger.error('Could not stringify error object:', stringifyError.message);
+        }
       }
     });
 

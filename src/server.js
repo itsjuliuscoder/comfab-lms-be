@@ -65,22 +65,23 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // Activity logging middleware (after rate limiting, before other middleware)
-app.use('/api/', activityLogger({
-  excludeActions: [
-    'GET /health',
-    'GET /api/v1/activities',
-    'GET /api/v1/analytics',
-    'GET /api/v1/statistics'
-  ],
-  roleBasedLogging: {
-    'ADMIN': ['*'],
-    'INSTRUCTOR': ['*'],
-    'PARTICIPANT': ['POST', 'PUT', 'PATCH', 'DELETE']
-  },
-  logBodies: false, // Set to true for debugging, but be careful with sensitive data
-  logSuccess: true,
-  logFailure: true
-}));
+// Temporarily disabled for debugging
+// app.use('/api/', activityLogger({
+//   excludeActions: [
+//     'GET /health',
+//     'GET /api/v1/activities',
+//     'GET /api/v1/analytics',
+//     'GET /api/v1/statistics'
+//   ],
+//   roleBasedLogging: {
+//     'ADMIN': ['*'],
+//     'INSTRUCTOR': ['*'],
+//     'PARTICIPANT': ['POST', 'PUT', 'PATCH', 'DELETE']
+//   },
+//   logBodies: false, // Set to true for debugging, but be careful with sensitive data
+//   logSuccess: true,
+//   logFailure: true
+// }));
 
 // Compression
 app.use(compression());
