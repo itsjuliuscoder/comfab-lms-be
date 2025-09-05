@@ -16,7 +16,7 @@ export const getCourseAssessments = async (req, res) => {
     const course = await Course.findById(courseId);
     if (!course) {
       return notFoundResponse(res, 'Course');
-    }ar
+    }
 
     // Build query
     const query = { courseId };
