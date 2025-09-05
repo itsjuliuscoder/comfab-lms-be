@@ -516,7 +516,7 @@ export const getCourseSections = async (req, res) => {
       .sort({ order: 1 })
       .populate({
         path: 'lessons',
-        select: 'title type durationSec isPublished isFree order',
+        select: 'title type durationSec isPublished isFree order youtubeVideoId contentUrl thumbnailUrl description',
         options: { sort: { order: 1 } }
       });
 
