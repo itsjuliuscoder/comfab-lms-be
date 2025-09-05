@@ -75,34 +75,6 @@ const activitySchema = new mongoose.Schema({
       'SETTINGS_UPDATED',
       'REPORT_GENERATED',
       'EXPORT_PERFORMED',
-      
-      // API and access actions
-      'API_ACCESSED',
-      'AUTH_FAILURE',
-      'RATE_LIMIT_EXCEEDED',
-      
-      // Course material actions
-      'COURSE_MATERIAL_UPLOADED',
-      'COURSE_MATERIAL_DOWNLOADED',
-      'COURSE_MATERIAL_DELETED',
-      
-      // Assessment actions
-      'ASSESSMENT_SUBMITTED',
-      'ASSESSMENT_GRADED',
-      'ASSESSMENT_VIEWED',
-      
-      // Bulk operations
-      'BULK_USER_INVITED',
-      'BULK_USER_UPDATED',
-      'BULK_USER_DELETED',
-      'BULK_COURSE_UPDATED',
-      'BULK_ENROLLMENT_CREATED',
-      
-      // Data operations
-      'DATA_EXPORTED',
-      'DATA_IMPORTED',
-      'DATA_BACKUP_CREATED',
-      'DATA_RESTORED',
     ],
   },
   
@@ -111,7 +83,7 @@ const activitySchema = new mongoose.Schema({
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: false, // Allow null for system/anonymous actions
+      required: [true, 'Actor user ID is required'],
     },
     name: {
       type: String,
@@ -123,7 +95,7 @@ const activitySchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT', 'ANONYMOUS', 'SYSTEM'],
+      enum: ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'],
       required: [true, 'Actor role is required'],
     },
   },
@@ -132,16 +104,16 @@ const activitySchema = new mongoose.Schema({
   target: {
     type: {
       type: String,
-      enum: ['USER', 'COURSE', 'LESSON', 'ENROLLMENT', 'COHORT', 'FILE', 'NOTE', 'DISCUSSION', 'SYSTEM', 'API', 'ASSESSMENT', 'ACTIVITY', 'ANALYTICS', 'STATISTICS', 'OTHER'],
+      enum: ['USER', 'COURSE', 'LESSON', 'ENROLLMENT', 'COHORT', 'FILE', 'NOTE', 'DISCUSSION', 'SYSTEM', 'OTHER'],
       required: [true, 'Target type is required'],
     },
     id: {
       type: mongoose.Schema.Types.ObjectId,
-      required: false, // Allow null for system actions
+      refPath: 'target.model',
     },
     model: {
       type: String,
-      enum: ['User', 'Course', 'Lesson', 'Enrollment', 'Cohort', 'File', 'Note', 'Discussion', 'CourseMaterial', 'Assessment', 'Activity'],
+      enum: ['User', 'Course', 'Lesson', 'Enrollment', 'Cohort', 'File', 'Note', 'Discussion'],
     },
     name: {
       type: String,
