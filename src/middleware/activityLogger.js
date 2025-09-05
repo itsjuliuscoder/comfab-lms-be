@@ -115,6 +115,9 @@ export const activityLogger = (options = {}) => {
 
     // Log the activity after response is sent
     res.on('finish', async () => {
+      // Declare variables in outer scope for error handling
+      let action, target, actor, context, changes, metadata;
+      
       try {
         const duration = Date.now() - startTime;
         const isSuccess = res.statusCode >= 200 && res.statusCode < 400;
@@ -147,16 +150,16 @@ export const activityLogger = (options = {}) => {
         }
 
         // Determine action type
-        const action = getActionType(req, customActionMapping);
+        action = getActionType(req, customActionMapping);
         
         // Get target information
-        const target = getTargetInfo(req, responseData);
+        target = getTargetInfo(req, responseData);
         
         // Get actor information
-        const actor = getActorInfo(req);
+        actor = getActorInfo(req);
         
         // Get context information
-        const context = {
+        context = {
           ipAddress: requestData.ip,
           userAgent: requestData.userAgent,
           sessionId: requestData.sessionId,
@@ -166,10 +169,10 @@ export const activityLogger = (options = {}) => {
         };
 
         // Get changes information (for write operations)
-        const changes = getChangesInfo(req, responseData);
+        changes = getChangesInfo(req, responseData);
 
         // Get metadata
-        const metadata = {
+        metadata = {
           requestData,
           responseData,
           duration,
@@ -207,10 +210,10 @@ export const activityLogger = (options = {}) => {
         logger.error('Failed to log activity in middleware', {
           error: error.message,
           stack: error.stack,
-          action,
-          actor: actor?.name,
-          target: target?.name || target?.type,
-          endpoint: context?.endpoint
+          action: action || 'Unknown',
+          actor: actor?.name || 'Unknown',
+          target: target?.name || target?.type || 'Unknown',
+          endpoint: context?.endpoint || req?.path || 'Unknown'
         });
       }
     });
