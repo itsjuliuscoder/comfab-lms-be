@@ -179,7 +179,7 @@ export const activityLogger = (options = {}) => {
         };
 
         // Log the activity
-        await ActivityService.logActivity({
+        const activityResult = await ActivityService.logActivity({
           action,
           actor,
           target,
@@ -194,8 +194,24 @@ export const activityLogger = (options = {}) => {
           duration
         });
 
+        if (!activityResult) {
+          logger.warn('Activity logging returned null', {
+            action,
+            actor: actor?.name,
+            target: target?.name || target?.type,
+            endpoint: context.endpoint
+          });
+        }
+
       } catch (error) {
-        logger.error('Failed to log activity', error);
+        logger.error('Failed to log activity in middleware', {
+          error: error.message,
+          stack: error.stack,
+          action,
+          actor: actor?.name,
+          target: target?.name || target?.type,
+          endpoint: context?.endpoint
+        });
       }
     });
 

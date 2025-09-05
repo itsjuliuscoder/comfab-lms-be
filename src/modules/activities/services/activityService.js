@@ -66,7 +66,13 @@ class ActivityService {
 
       return activity;
     } catch (error) {
-      logger.error('Failed to log activity', error);
+      logger.error('Failed to log activity', {
+        error: error.message,
+        stack: error.stack,
+        action,
+        actor: actor?.name || 'Unknown',
+        target: target?.name || target?.type || 'Unknown'
+      });
       return null;
     }
   }

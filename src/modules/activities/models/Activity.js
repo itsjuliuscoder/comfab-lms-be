@@ -111,7 +111,7 @@ const activitySchema = new mongoose.Schema({
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Actor user ID is required'],
+      required: false, // Allow null for system/anonymous actions
     },
     name: {
       type: String,
@@ -123,7 +123,7 @@ const activitySchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'],
+      enum: ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT', 'ANONYMOUS', 'SYSTEM'],
       required: [true, 'Actor role is required'],
     },
   },
@@ -132,16 +132,17 @@ const activitySchema = new mongoose.Schema({
   target: {
     type: {
       type: String,
-      enum: ['USER', 'COURSE', 'LESSON', 'ENROLLMENT', 'COHORT', 'FILE', 'NOTE', 'DISCUSSION', 'SYSTEM', 'OTHER'],
+      enum: ['USER', 'COURSE', 'LESSON', 'ENROLLMENT', 'COHORT', 'FILE', 'NOTE', 'DISCUSSION', 'SYSTEM', 'API', 'ASSESSMENT', 'ACTIVITY', 'ANALYTICS', 'STATISTICS', 'OTHER'],
       required: [true, 'Target type is required'],
     },
     id: {
       type: mongoose.Schema.Types.ObjectId,
       refPath: 'target.model',
+      required: false, // Allow null for system actions
     },
     model: {
       type: String,
-      enum: ['User', 'Course', 'Lesson', 'Enrollment', 'Cohort', 'File', 'Note', 'Discussion'],
+      enum: ['User', 'Course', 'Lesson', 'Enrollment', 'Cohort', 'File', 'Note', 'Discussion', 'CourseMaterial', 'Assessment', 'Activity'],
     },
     name: {
       type: String,
