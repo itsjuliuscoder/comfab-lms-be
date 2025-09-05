@@ -75,6 +75,34 @@ const activitySchema = new mongoose.Schema({
       'SETTINGS_UPDATED',
       'REPORT_GENERATED',
       'EXPORT_PERFORMED',
+      
+      // API and access actions
+      'API_ACCESSED',
+      'AUTH_FAILURE',
+      'RATE_LIMIT_EXCEEDED',
+      
+      // Course material actions
+      'COURSE_MATERIAL_UPLOADED',
+      'COURSE_MATERIAL_DOWNLOADED',
+      'COURSE_MATERIAL_DELETED',
+      
+      // Assessment actions
+      'ASSESSMENT_SUBMITTED',
+      'ASSESSMENT_GRADED',
+      'ASSESSMENT_VIEWED',
+      
+      // Bulk operations
+      'BULK_USER_INVITED',
+      'BULK_USER_UPDATED',
+      'BULK_USER_DELETED',
+      'BULK_COURSE_UPDATED',
+      'BULK_ENROLLMENT_CREATED',
+      
+      // Data operations
+      'DATA_EXPORTED',
+      'DATA_IMPORTED',
+      'DATA_BACKUP_CREATED',
+      'DATA_RESTORED',
     ],
   },
   

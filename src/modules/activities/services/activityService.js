@@ -524,6 +524,322 @@ class ActivityService {
   }
 
   /**
+   * Log API access
+   */
+  static async logApiAccess(user, endpoint, method, context = {}) {
+    return this.logActivity({
+      action: 'API_ACCESSED',
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'API',
+        id: null,
+        model: null,
+        name: `${method} ${endpoint}`,
+      },
+      context,
+      metadata: {
+        endpoint,
+        method,
+        accessType: 'api',
+      },
+    });
+  }
+
+  /**
+   * Log course material upload
+   */
+  static async logCourseMaterialUpload(user, material, course, context = {}) {
+    return this.logActivity({
+      action: 'COURSE_MATERIAL_UPLOADED',
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'FILE',
+        id: material._id,
+        model: 'CourseMaterial',
+        name: material.title,
+      },
+      context,
+      metadata: {
+        materialId: material._id,
+        courseId: course._id,
+        courseName: course.title,
+        materialType: material.type,
+        fileSize: material.file.size,
+      },
+    });
+  }
+
+  /**
+   * Log course material download
+   */
+  static async logCourseMaterialDownload(user, material, course, context = {}) {
+    return this.logActivity({
+      action: 'COURSE_MATERIAL_DOWNLOADED',
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'FILE',
+        id: material._id,
+        model: 'CourseMaterial',
+        name: material.title,
+      },
+      context,
+      metadata: {
+        materialId: material._id,
+        courseId: course._id,
+        courseName: course.title,
+        materialType: material.type,
+        downloadCount: material.downloadCount,
+      },
+    });
+  }
+
+  /**
+   * Log lesson view
+   */
+  static async logLessonView(user, lesson, course, context = {}) {
+    return this.logActivity({
+      action: 'LESSON_VIEWED',
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'LESSON',
+        id: lesson._id,
+        model: 'Lesson',
+        name: lesson.title,
+      },
+      context,
+      metadata: {
+        lessonId: lesson._id,
+        courseId: course._id,
+        courseName: course.title,
+        lessonType: lesson.type,
+        viewCount: lesson.viewCount,
+      },
+    });
+  }
+
+  /**
+   * Log course view
+   */
+  static async logCourseView(user, course, context = {}) {
+    return this.logActivity({
+      action: 'COURSE_VIEWED',
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'COURSE',
+        id: course._id,
+        model: 'Course',
+        name: course.title,
+      },
+      context,
+      metadata: {
+        courseId: course._id,
+        difficulty: course.difficulty,
+        isPublic: course.isPublic,
+      },
+    });
+  }
+
+  /**
+   * Log assessment submission
+   */
+  static async logAssessmentSubmission(user, assessment, submission, context = {}) {
+    return this.logActivity({
+      action: 'ASSESSMENT_SUBMITTED',
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'ASSESSMENT',
+        id: assessment._id,
+        model: 'Assessment',
+        name: assessment.title,
+      },
+      context,
+      metadata: {
+        assessmentId: assessment._id,
+        submissionId: submission._id,
+        score: submission.score,
+        totalQuestions: assessment.questions.length,
+        timeSpent: context.timeSpent,
+      },
+    });
+  }
+
+  /**
+   * Log bulk user invitation
+   */
+  static async logBulkUserInvitation(user, invitedUsers, context = {}) {
+    return this.logActivity({
+      action: 'BULK_USER_INVITED',
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'USER',
+        id: null,
+        model: 'User',
+        name: `${invitedUsers.length} users`,
+      },
+      context,
+      metadata: {
+        invitedCount: invitedUsers.length,
+        invitedEmails: invitedUsers.map(u => u.email),
+        invitationMethod: context.method || 'bulk',
+      },
+    });
+  }
+
+  /**
+   * Log data export
+   */
+  static async logDataExport(user, exportType, recordCount, context = {}) {
+    return this.logActivity({
+      action: 'DATA_EXPORTED',
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target: {
+        type: 'SYSTEM',
+        id: null,
+        model: null,
+        name: `${exportType} export`,
+      },
+      context,
+      metadata: {
+        exportType,
+        recordCount,
+        format: context.format || 'csv',
+        fileSize: context.fileSize,
+      },
+    });
+  }
+
+  /**
+   * Log admin action
+   */
+  static async logAdminAction(user, action, target, context = {}) {
+    return this.logActivity({
+      action: `ADMIN_${action}`,
+      actor: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      target,
+      context,
+      metadata: {
+        adminAction: action,
+        targetType: target.type,
+        targetId: target.id,
+      },
+    });
+  }
+
+  /**
+   * Log authentication failure
+   */
+  static async logAuthFailure(identifier, reason, context = {}) {
+    return this.logActivity({
+      action: 'AUTH_FAILURE',
+      actor: {
+        userId: null,
+        name: 'Anonymous',
+        email: identifier || 'unknown',
+        role: 'ANONYMOUS',
+      },
+      target: {
+        type: 'SYSTEM',
+        id: null,
+        model: null,
+        name: 'Authentication System',
+      },
+      context,
+      status: 'FAILURE',
+      error: {
+        code: 'AUTH_FAILED',
+        message: reason,
+      },
+      metadata: {
+        identifier,
+        failureReason: reason,
+        attemptType: context.attemptType || 'login',
+      },
+    });
+  }
+
+  /**
+   * Log rate limit exceeded
+   */
+  static async logRateLimitExceeded(user, endpoint, context = {}) {
+    return this.logActivity({
+      action: 'RATE_LIMIT_EXCEEDED',
+      actor: user ? {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      } : {
+        userId: null,
+        name: 'Anonymous',
+        email: 'anonymous@system',
+        role: 'ANONYMOUS',
+      },
+      target: {
+        type: 'SYSTEM',
+        id: null,
+        model: null,
+        name: 'Rate Limiter',
+      },
+      context,
+      status: 'FAILURE',
+      error: {
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Too many requests',
+      },
+      metadata: {
+        endpoint,
+        limit: context.limit,
+        window: context.window,
+      },
+    });
+  }
+
+  /**
    * Clean up old activities (for maintenance)
    */
   static async cleanupOldActivities(daysToKeep = 365) {
