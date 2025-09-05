@@ -12,6 +12,7 @@ import {
   getEnrollmentDetails,
   getAllEnrollments,
   getCourseEnrollmentStats,
+  getCourseEnrollments,
 } from '../controllers/enrollmentController.js';
 
 const router = express.Router();
@@ -29,6 +30,7 @@ const updateEnrollmentSchema = z.object({
 // User Enrollment Routes
 router.get('/', requireAuth, asyncHandler(getUserEnrollments));
 router.post('/', requireAuth, validateBody(enrollInCourseSchema), asyncHandler(enrollInCourse));
+router.get('/courses/:courseId', requireAuth, asyncHandler(getCourseEnrollments));
 router.get('/:id', requireAuth, asyncHandler(getEnrollmentDetails));
 router.put('/:id', requireAuth, validateBody(updateEnrollmentSchema), asyncHandler(updateEnrollment));
 router.delete('/:id', requireAuth, asyncHandler(withdrawFromCourse));

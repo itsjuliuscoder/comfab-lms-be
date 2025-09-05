@@ -1,5 +1,6 @@
 import { Enrollment } from '../models/Enrollment.js';
 import { Course } from '../../courses/models/Course.js';
+import { User } from '../../users/models/User.js';
 import { sendEnrollmentEmail } from '../../../config/email.js';
 import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
 import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
@@ -29,6 +30,76 @@ export const getUserEnrollments = async (req, res) => {
     return successResponse(res, result, 'Enrollments retrieved successfully');
   } catch (error) {
     logger.error('Get user enrollments error:', error);
+    return errorResponse(res, error);
+  }
+};
+
+// GET /enrollments/courses/:courseId - Get enrollments for a specific course
+export const getCourseEnrollments = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { page, limit } = getPaginationParams(req.query);
+    const { status, search } = req.query;
+
+    // Check if course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return notFoundResponse(res, 'Course');
+    }
+
+    // Check if user has access to view enrollments for this course
+    // Only allow if user is admin, instructor, or enrolled in the course
+    const userEnrollment = await Enrollment.findOne({ 
+      userId: req.user._id, 
+      courseId: courseId 
+    });
+    
+    if (req.user.role !== 'ADMIN' && req.user.role !== 'INSTRUCTOR' && !userEnrollment) {
+      return forbiddenResponse(res, 'Access denied. You must be enrolled in this course to view enrollments.');
+    }
+
+    // Build query
+    const query = { courseId: courseId };
+    if (status) query.status = status;
+
+    // Add search functionality
+    if (search) {
+      // Search in user names and emails
+      const users = await User.find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } }
+        ]
+      }).select('_id');
+      
+      const userIds = users.map(user => user._id);
+      query.userId = { $in: userIds };
+    }
+
+    // Get total count
+    const total = await Enrollment.countDocuments(query);
+
+    // Get enrollments with pagination
+    const enrollments = await Enrollment.find(query)
+      .populate('userId', 'name email avatar')
+      .populate('courseId', 'title summary thumbnailUrl')
+      .sort({ enrolledAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const result = createPaginationResult(enrollments, total, page, limit);
+    
+    // Add course information to response
+    result.course = {
+      _id: course._id,
+      title: course.title,
+      summary: course.summary,
+      thumbnailUrl: course.thumbnailUrl
+    };
+
+    return successResponse(res, result, 'Course enrollments retrieved successfully');
+  } catch (error) {
+    logger.error('Get course enrollments error:', error);
     return errorResponse(res, error);
   }
 };
