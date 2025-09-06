@@ -454,10 +454,12 @@ export const getUserSubmissions = async (req, res) => {
 };
 
 // GET /assessments/:id/results - Get all submissions for assessment (instructor/admin)
+// GET /assessments/:id/results - Get assessment results (for participants: own results, for instructors: all results)
 export const getAssessmentResults = async (req, res) => {
   try {
     const { courseId, assessmentId } = req.params;
     const { page, limit } = getPaginationParams(req.query);
+    const userId = req.user._id;
 
     const assessment = await Assessment.findById(assessmentId);
     if (!assessment) {
@@ -469,16 +471,29 @@ export const getAssessmentResults = async (req, res) => {
       return notFoundResponse(res, 'Assessment not found in this course');
     }
 
-    // Check permissions
-    if (assessment.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
-      return forbiddenResponse(res, 'Only assessment owner or admin can view results');
+    let query = { assessmentId };
+    let message = 'Assessment results retrieved successfully';
+
+    // Check user role and permissions
+    if (req.user.role === 'PARTICIPANT') {
+      // Participants can only view their own results
+      query.userId = userId;
+      message = 'Your assessment results retrieved successfully';
+    } else if (req.user.role === 'INSTRUCTOR' || req.user.role === 'ADMIN') {
+      // Instructors can view all results for their assessments, admins can view all
+      if (req.user.role === 'INSTRUCTOR' && assessment.ownerId.toString() !== userId.toString()) {
+        return forbiddenResponse(res, 'Only assessment owner or admin can view all results');
+      }
+      // For instructors/admins, query remains { assessmentId } to get all submissions
+    } else {
+      return forbiddenResponse(res, 'Access denied. Required roles: ADMIN, INSTRUCTOR, PARTICIPANT');
     }
 
     // Get total count
-    const total = await AssessmentSubmission.countDocuments({ assessmentId });
+    const total = await AssessmentSubmission.countDocuments(query);
 
     // Get submissions with pagination
-    const submissions = await AssessmentSubmission.find({ assessmentId })
+    const submissions = await AssessmentSubmission.find(query)
       .populate('userId', 'name email')
       .populate('gradedBy', 'name email')
       .sort({ submitTime: -1 })
@@ -486,7 +501,7 @@ export const getAssessmentResults = async (req, res) => {
       .limit(limit);
 
     const result = createPaginationResult(submissions, total, page, limit);
-    return successResponse(res, result, 'Assessment results retrieved successfully');
+    return successResponse(res, result, message);
   } catch (error) {
     logger.error('Get assessment results error:', error);
     return errorResponse(res, error);

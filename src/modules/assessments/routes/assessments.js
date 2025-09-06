@@ -92,6 +92,6 @@ router.delete('/courses/:courseId/assessments/:assessmentId', requireAuth, requi
 router.post('/courses/:courseId/assessments/:assessmentId/start', requireAuth, asyncHandler(startAssessment));
 router.post('/courses/:courseId/assessments/:assessmentId/submit', requireAuth, validateBody(submitAssessmentSchema), asyncHandler(submitAssessment));
 router.get('/courses/:courseId/assessments/:assessmentId/submissions', requireAuth, asyncHandler(getUserSubmissions));
-router.get('/courses/:courseId/assessments/:assessmentId/results', requireAuth, requireInstructor, asyncHandler(getAssessmentResults));
+router.get('/courses/:courseId/assessments/:assessmentId/results', requireAuth, asyncHandler(getAssessmentResults));
 
 export default router;
