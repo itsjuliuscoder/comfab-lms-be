@@ -453,6 +453,121 @@ export const getUserSubmissions = async (req, res) => {
   }
 };
 
+// GET /assessments/my-assessments - Get all assessments for the current user (participant)
+export const getMyAssessments = async (req, res) => {
+  try {
+    const { page, limit } = getPaginationParams(req.query);
+    const { status, type, courseId, search } = req.query;
+    const userId = req.user._id;
+
+    // Build query for assessments the user has access to
+    let assessmentQuery = { isPublished: true };
+    
+    if (type) assessmentQuery.type = type;
+    if (search) {
+      assessmentQuery.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { tags: { $in: [new RegExp(search, 'i')] } },
+      ];
+    }
+
+    // If courseId is specified, filter by course
+    if (courseId) {
+      assessmentQuery.courseId = courseId;
+    }
+
+    // Get assessments
+    const assessments = await Assessment.find(assessmentQuery)
+      .populate('courseId', 'title status')
+      .populate('ownerId', 'name email')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    // Get user's submissions for these assessments
+    const assessmentIds = assessments.map(assessment => assessment._id);
+    const submissions = await AssessmentSubmission.find({
+      userId,
+      assessmentId: { $in: assessmentIds }
+    });
+
+    // Create a map of assessmentId to submissions
+    const submissionMap = {};
+    submissions.forEach(submission => {
+      if (!submissionMap[submission.assessmentId.toString()]) {
+        submissionMap[submission.assessmentId.toString()] = [];
+      }
+      submissionMap[submission.assessmentId.toString()].push(submission);
+    });
+
+    // Enhance assessments with user's submission data
+    const assessmentsWithSubmissions = assessments.map(assessment => {
+      const userSubmissions = submissionMap[assessment._id.toString()] || [];
+      const latestSubmission = userSubmissions.length > 0 
+        ? userSubmissions.sort((a, b) => new Date(b.submitTime) - new Date(a.submitTime))[0]
+        : null;
+
+      return {
+        ...assessment.toObject(),
+        userSubmissions: {
+          totalAttempts: userSubmissions.length,
+          latestSubmission: latestSubmission ? {
+            _id: latestSubmission._id,
+            status: latestSubmission.status,
+            totalScore: latestSubmission.totalScore,
+            percentage: latestSubmission.percentage,
+            passed: latestSubmission.passed,
+            submitTime: latestSubmission.submitTime,
+            attemptNumber: latestSubmission.attemptNumber
+          } : null,
+          canRetake: userSubmissions.length < assessment.maxAttempts,
+          remainingAttempts: Math.max(0, assessment.maxAttempts - userSubmissions.length)
+        }
+      };
+    });
+
+    // Filter by status if specified
+    let filteredAssessments = assessmentsWithSubmissions;
+    if (status) {
+      if (status === 'completed') {
+        filteredAssessments = assessmentsWithSubmissions.filter(a => 
+          a.userSubmissions.latestSubmission && 
+          a.userSubmissions.latestSubmission.status === 'COMPLETED'
+        );
+      } else if (status === 'in_progress') {
+        filteredAssessments = assessmentsWithSubmissions.filter(a => 
+          a.userSubmissions.latestSubmission && 
+          a.userSubmissions.latestSubmission.status === 'IN_PROGRESS'
+        );
+      } else if (status === 'not_started') {
+        filteredAssessments = assessmentsWithSubmissions.filter(a => 
+          a.userSubmissions.totalAttempts === 0
+        );
+      } else if (status === 'passed') {
+        filteredAssessments = assessmentsWithSubmissions.filter(a => 
+          a.userSubmissions.latestSubmission && 
+          a.userSubmissions.latestSubmission.passed === true
+        );
+      } else if (status === 'failed') {
+        filteredAssessments = assessmentsWithSubmissions.filter(a => 
+          a.userSubmissions.latestSubmission && 
+          a.userSubmissions.latestSubmission.passed === false
+        );
+      }
+    }
+
+    // Get total count for pagination
+    const total = await Assessment.countDocuments(assessmentQuery);
+
+    const result = createPaginationResult(filteredAssessments, total, page, limit);
+    return successResponse(res, result, 'Your assessments retrieved successfully');
+  } catch (error) {
+    logger.error('Get my assessments error:', error);
+    return errorResponse(res, error);
+  }
+};
+
 // GET /assessments/:id/results - Get all submissions for assessment (instructor/admin)
 // GET /assessments/:id/results - Get assessment results (for participants: own results, for instructors: all results)
 export const getAssessmentResults = async (req, res) => {

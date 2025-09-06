@@ -13,6 +13,7 @@ import {
   startAssessment,
   submitAssessment,
   getUserSubmissions,
+  getMyAssessments,
   getAssessmentResults,
 } from '../controllers/assessmentController.js';
 
@@ -82,6 +83,7 @@ const submitAssessmentSchema = z.object({
 });
 
 // Assessment Routes
+router.get('/my-assessments', requireAuth, asyncHandler(getMyAssessments));
 router.get('/courses/:courseId/assessments', asyncHandler(getCourseAssessments));
 router.post('/courses/:courseId/assessments', requireAuth, requireInstructor, validateBody(createAssessmentSchema), asyncHandler(createAssessment));
 router.get('/courses/:courseId/assessments/:assessmentId', requireAuth, asyncHandler(getAssessmentById));
