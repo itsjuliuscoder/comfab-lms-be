@@ -7,11 +7,11 @@ import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } f
 import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
 
-// GET /courses - Get all courses
+// GET /courses - Get all courses with enrollment status
 export const getAllCourses = async (req, res) => {
   try {
     const { page, limit } = getPaginationParams(req.query);
-    const { status, difficulty, featured, search, ownerId } = req.query;
+    const { status, difficulty, featured, search, ownerId, includeEnrollmentStatus } = req.query;
 
     // Build query
     const query = {};
@@ -43,10 +43,145 @@ export const getAllCourses = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const result = createPaginationResult(courses, total, page, limit);
+    // If user is authenticated and enrollment status is requested, check enrollment for each course
+    let coursesWithEnrollment = courses;
+    if (req.user && includeEnrollmentStatus === 'true') {
+      const courseIds = courses.map(course => course._id);
+      
+      // Get user's enrollments for these courses
+      const enrollments = await Enrollment.find({
+        userId: req.user._id,
+        courseId: { $in: courseIds },
+        status: { $in: ['ACTIVE', 'COMPLETED'] }
+      });
+
+      // Create a map of courseId to enrollment
+      const enrollmentMap = {};
+      enrollments.forEach(enrollment => {
+        enrollmentMap[enrollment.courseId.toString()] = enrollment;
+      });
+
+      // Add enrollment status to each course
+      coursesWithEnrollment = courses.map(course => {
+        const enrollment = enrollmentMap[course._id.toString()];
+        return {
+          ...course.toObject(),
+          enrollmentStatus: enrollment ? {
+            isEnrolled: true,
+            enrollmentId: enrollment._id,
+            status: enrollment.status,
+            enrolledAt: enrollment.enrolledAt,
+            progress: enrollment.progress || 0,
+            completedAt: enrollment.completedAt
+          } : {
+            isEnrolled: false,
+            enrollmentId: null,
+            status: null,
+            enrolledAt: null,
+            progress: 0,
+            completedAt: null
+          }
+        };
+      });
+    }
+
+    const result = createPaginationResult(coursesWithEnrollment, total, page, limit);
     return successResponse(res, result, 'Courses retrieved successfully');
   } catch (error) {
     logger.error('Get all courses error:', error);
+    return errorResponse(res, error);
+  }
+};
+
+// GET /courses/catalog - Get courses for catalog with enrollment status
+export const getCourseCatalog = async (req, res) => {
+  try {
+    const { page, limit } = getPaginationParams(req.query);
+    const { difficulty, featured, search, topic } = req.query;
+
+    // Build query for published courses only
+    const query = { status: 'PUBLISHED' };
+    
+    if (difficulty) query.difficulty = difficulty;
+    if (featured) query.featured = featured === 'true';
+    if (topic) query.tags = { $in: [new RegExp(topic, 'i')] };
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { summary: { $regex: search, $options: 'i' } },
+        { tags: { $in: [new RegExp(search, 'i')] } },
+      ];
+    }
+
+    // Get total count
+    const total = await Course.countDocuments(query);
+
+    // Get courses with pagination
+    const courses = await Course.find(query)
+      .populate('ownerId', 'name email')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    // Always check enrollment status for authenticated users
+    let coursesWithEnrollment = courses;
+    if (req.user) {
+      const courseIds = courses.map(course => course._id);
+      
+      // Get user's enrollments for these courses
+      const enrollments = await Enrollment.find({
+        userId: req.user._id,
+        courseId: { $in: courseIds },
+        status: { $in: ['ACTIVE', 'COMPLETED'] }
+      });
+
+      // Create a map of courseId to enrollment
+      const enrollmentMap = {};
+      enrollments.forEach(enrollment => {
+        enrollmentMap[enrollment.courseId.toString()] = enrollment;
+      });
+
+      // Add enrollment status to each course
+      coursesWithEnrollment = courses.map(course => {
+        const enrollment = enrollmentMap[course._id.toString()];
+        return {
+          ...course.toObject(),
+          enrollmentStatus: enrollment ? {
+            isEnrolled: true,
+            enrollmentId: enrollment._id,
+            status: enrollment.status,
+            enrolledAt: enrollment.enrolledAt,
+            progress: enrollment.progress || 0,
+            completedAt: enrollment.completedAt
+          } : {
+            isEnrolled: false,
+            enrollmentId: null,
+            status: null,
+            enrolledAt: null,
+            progress: 0,
+            completedAt: null
+          }
+        };
+      });
+    } else {
+      // For unauthenticated users, add default enrollment status
+      coursesWithEnrollment = courses.map(course => ({
+        ...course.toObject(),
+        enrollmentStatus: {
+          isEnrolled: false,
+          enrollmentId: null,
+          status: null,
+          enrolledAt: null,
+          progress: 0,
+          completedAt: null
+        }
+      }));
+    }
+
+    const result = createPaginationResult(coursesWithEnrollment, total, page, limit);
+    return successResponse(res, result, 'Course catalog retrieved successfully');
+  } catch (error) {
+    logger.error('Get course catalog error:', error);
     return errorResponse(res, error);
   }
 };
