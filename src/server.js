@@ -23,6 +23,7 @@ import statisticsRoutes from './modules/statistics/routes/statistics.js';
 import analyticsRoutes from './modules/analytics/routes/analytics.js';
 import assessmentRoutes from './modules/assessments/routes/assessments.js';
 import courseMaterialRoutes from './modules/courses/routes/courseMaterials.js';
+import announcementRoutes from './modules/announcements/routes/announcements.js';
 
 const app = express();
 
@@ -111,6 +112,7 @@ app.use('/api/v1/statistics', statisticsRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/assessments', assessmentRoutes);
 app.use('/api/v1/course-materials', courseMaterialRoutes);
+app.use('/api/v1/announcements', announcementRoutes);
 
 // Temporary welcome route
 app.get('/api/v1', (req, res) => {
