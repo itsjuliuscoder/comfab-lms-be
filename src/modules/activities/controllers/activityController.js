@@ -4,6 +4,60 @@ import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } f
 import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
 
+// POST /activities - Create a new activity
+export const createActivity = async (req, res) => {
+  try {
+    const {
+      action,
+      actor,
+      target,
+      context,
+      metadata
+    } = req.body;
+
+    // Validate required fields
+    if (!action) {
+      return errorResponse(res, new Error('Action is required'), 400);
+    }
+
+    if (!actor) {
+      return errorResponse(res, new Error('Actor information is required'), 400);
+    }
+
+    if (!target) {
+      return errorResponse(res, new Error('Target information is required'), 400);
+    }
+
+    // If actor information is not provided, use current user
+    const actorInfo = actor || {
+      userId: req.user._id,
+      name: req.user.name,
+      email: req.user.email,
+      role: req.user.role
+    };
+
+    // Create activity using ActivityService
+    const activity = await ActivityService.logActivity({
+      action,
+      actor: actorInfo,
+      target,
+      context,
+      metadata,
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    if (!activity) {
+      return errorResponse(res, new Error('Failed to create activity'), 500);
+    }
+
+    return successResponse(res, activity, 'Activity created successfully', 201);
+  } catch (error) {
+    logger.error('Create activity error:', error);
+    return errorResponse(res, error);
+  }
+};
+
 // GET /activities - Get all activities (Admin only)
 export const getAllActivities = async (req, res) => {
   try {

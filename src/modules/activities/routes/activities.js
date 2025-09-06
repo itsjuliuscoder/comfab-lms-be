@@ -5,6 +5,7 @@ import { requireAdmin } from '../../../middleware/rbac.js';
 import { validateBody, validateQuery } from '../../../middleware/validation.js';
 import { asyncHandler } from '../../../middleware/error.js';
 import {
+  createActivity,
   getAllActivities,
   getDashboardSummary,
   getUserActivities,
@@ -48,6 +49,31 @@ const exportSchema = z.object({
 const cleanupSchema = z.object({
   daysToKeep: z.number().min(1).max(3650).default(365), // Max 10 years
 });
+
+const createActivitySchema = z.object({
+  action: z.string().min(1, 'Action is required').max(100, 'Action cannot exceed 100 characters'),
+  actor: z.object({
+    userId: z.string().optional(),
+    name: z.string().min(1, 'Actor name is required').max(100, 'Actor name cannot exceed 100 characters'),
+    email: z.string().email('Invalid email format').max(100, 'Email cannot exceed 100 characters'),
+    role: z.enum(['ADMIN', 'INSTRUCTOR', 'PARTICIPANT']).optional(),
+  }).optional(),
+  target: z.object({
+    type: z.enum(['USER', 'COURSE', 'LESSON', 'ENROLLMENT', 'COHORT', 'FILE', 'NOTE', 'DISCUSSION', 'SYSTEM', 'OTHER']),
+    id: z.string().optional(),
+    model: z.enum(['User', 'Course', 'Lesson', 'Enrollment', 'Cohort', 'File', 'Note', 'Discussion']).optional(),
+    name: z.string().max(200, 'Target name cannot exceed 200 characters').optional(),
+  }),
+  context: z.object({
+    description: z.string().max(500, 'Context description cannot exceed 500 characters').optional(),
+    source: z.string().max(100, 'Source cannot exceed 100 characters').optional(),
+    additionalInfo: z.record(z.any()).optional(),
+  }).optional(),
+  metadata: z.record(z.any()).optional(),
+});
+
+// Routes
+router.post('/', requireAuth, validateBody(createActivitySchema), asyncHandler(createActivity));
 
 // Admin-only routes
 router.get('/', requireAuth, requireAdmin, asyncHandler(getAllActivities));
