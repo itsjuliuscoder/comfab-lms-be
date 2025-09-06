@@ -254,7 +254,7 @@ export const deleteAssessment = async (req, res) => {
 export const startAssessment = async (req, res) => {
   try {
     const { courseId, assessmentId } = req.params;
-    const { userId } = req.user;
+    const userId = req.user._id;
 
     const assessment = await Assessment.findById(assessmentId)
       .populate('courseId', 'title status');
@@ -327,7 +327,7 @@ export const submitAssessment = async (req, res) => {
   try {
     const { courseId, assessmentId } = req.params;
     const { submissionId, answers } = req.body;
-    const { userId } = req.user;
+    const userId = req.user._id;
 
     const assessment = await Assessment.findById(assessmentId);
     if (!assessment) {
@@ -432,7 +432,7 @@ export const submitAssessment = async (req, res) => {
 export const getUserSubmissions = async (req, res) => {
   try {
     const { courseId, assessmentId } = req.params;
-    const { userId } = req.user;
+    const userId = req.user._id;
 
     const assessment = await Assessment.findById(assessmentId);
     if (!assessment) {
