@@ -28,13 +28,18 @@ export const createActivity = async (req, res) => {
       return errorResponse(res, new Error('Target information is required'), 400);
     }
 
-    // If actor information is not provided, use current user
-    const actorInfo = actor || {
+    // If actor information is not provided, use current user (if authenticated)
+    const actorInfo = actor || (req.user ? {
       userId: req.user._id,
       name: req.user.name,
       email: req.user.email,
       role: req.user.role
-    };
+    } : {
+      userId: null,
+      name: 'Anonymous User',
+      email: 'anonymous@system.local',
+      role: 'ANONYMOUS'
+    });
 
     // Create activity using ActivityService
     const activity = await ActivityService.logActivity({

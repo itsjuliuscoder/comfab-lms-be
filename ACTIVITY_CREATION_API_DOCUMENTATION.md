@@ -1,15 +1,15 @@
 # Activity Creation API Documentation
 
 ## Overview
-The Activity Creation API allows authenticated users to manually log activities in the system. This is useful for frontend integration, custom activity tracking, and administrative logging.
+The Activity Creation API allows users (authenticated or anonymous) to manually log activities in the system. This is useful for frontend integration, custom activity tracking, and administrative logging. When no authentication is provided, activities are logged as anonymous.
 
 ## Endpoint
 
 ### POST /api/v1/activities
 Create a new activity log entry.
 
-**Authentication:** Required (Bearer Token)
-**Authorization:** Any authenticated user
+**Authentication:** Optional (Bearer Token)
+**Authorization:** Any user (authenticated or anonymous)
 
 ## Request Body
 
@@ -55,11 +55,25 @@ Create a new activity log entry.
 
 ## Example Requests
 
-### 1. Simple Activity Log
+### 1. Simple Activity Log (Authenticated)
 ```bash
 curl -X POST http://localhost:9092/api/v1/activities \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "action": "VIEW_COURSE",
+    "target": {
+      "type": "COURSE",
+      "id": "68ba5cdc809c41ef914ad23c",
+      "name": "Introduction to Purpose Discovery"
+    }
+  }'
+```
+
+### 1b. Simple Activity Log (Anonymous)
+```bash
+curl -X POST http://localhost:9092/api/v1/activities \
+  -H "Content-Type: application/json" \
   -d '{
     "action": "VIEW_COURSE",
     "target": {
@@ -199,8 +213,10 @@ curl -X POST http://localhost:9092/api/v1/activities \
 
 ## Notes
 
-- If `actor` is not provided, the system automatically uses the current authenticated user's information
+- If `actor` is not provided and user is authenticated, the system automatically uses the current user's information
+- If `actor` is not provided and user is anonymous, the system uses default anonymous user information
 - The API automatically captures IP address and User-Agent from the request
 - All activities are timestamped with `performedAt` and `createdAt` fields
 - The system validates all input data according to the Activity model schema
 - Failed activity creation attempts are logged for debugging purposes
+- Anonymous activities are logged with role 'ANONYMOUS' and default anonymous user details
