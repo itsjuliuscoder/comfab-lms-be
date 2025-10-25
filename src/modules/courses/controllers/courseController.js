@@ -1,36 +1,51 @@
-import { Course } from '../models/Course.js';
-import { Section } from '../models/Section.js';
-import { Lesson } from '../models/Lesson.js';
-import { Enrollment } from '../../enrollments/models/Enrollment.js';
-import { uploadToCloudinary } from '../../../config/cloudinary.js';
-import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
-import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
-import { logger } from '../../../utils/logger.js';
+import { Course } from "../models/Course.js";
+import { Section } from "../models/Section.js";
+import { Lesson } from "../models/Lesson.js";
+import { Enrollment } from "../../enrollments/models/Enrollment.js";
+import { uploadToCloudinary } from "../../../config/cloudinary.js";
+import {
+  successResponse,
+  errorResponse,
+  notFoundResponse,
+  forbiddenResponse,
+} from "../../../utils/response.js";
+import {
+  getPaginationParams,
+  createPaginationResult,
+} from "../../../utils/pagination.js";
+import { logger } from "../../../utils/logger.js";
 
 // GET /courses - Get all courses with enrollment status
 export const getAllCourses = async (req, res) => {
   try {
     const { page, limit } = getPaginationParams(req.query);
-    const { status, difficulty, featured, search, ownerId, includeEnrollmentStatus } = req.query;
+    const {
+      status,
+      difficulty,
+      featured,
+      search,
+      ownerId,
+      includeEnrollmentStatus,
+    } = req.query;
 
     // Build query
     const query = {};
     if (status) query.status = status;
     if (difficulty) query.difficulty = difficulty;
-    if (featured) query.featured = featured === 'true';
+    if (featured) query.featured = featured === "true";
     if (ownerId) query.ownerId = ownerId;
     if (search) {
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { summary: { $regex: search, $options: 'i' } },
-        { tags: { $in: [new RegExp(search, 'i')] } },
+        { title: { $regex: search, $options: "i" } },
+        { summary: { $regex: search, $options: "i" } },
+        { tags: { $in: [new RegExp(search, "i")] } },
       ];
     }
 
     // For non-admin users, only show published courses in production
     // In development, show all courses for easier testing
-    if (req.user?.role !== 'ADMIN' && process.env.NODE_ENV === 'production') {
-      query.status = 'PUBLISHED';
+    if (req.user?.role !== "ADMIN" && process.env.NODE_ENV === "production") {
+      query.status = "PUBLISHED";
     }
 
     // Get total count
@@ -38,57 +53,64 @@ export const getAllCourses = async (req, res) => {
 
     // Get courses with pagination
     const courses = await Course.find(query)
-      .populate('ownerId', 'name email')
+      .populate("ownerId", "name email")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
     // If user is authenticated and enrollment status is requested, check enrollment for each course
     let coursesWithEnrollment = courses;
-    if (req.user && includeEnrollmentStatus === 'true') {
-      const courseIds = courses.map(course => course._id);
-      
+    if (req.user && includeEnrollmentStatus === "true") {
+      const courseIds = courses.map((course) => course._id);
+
       // Get user's enrollments for these courses
       const enrollments = await Enrollment.find({
         userId: req.user._id,
         courseId: { $in: courseIds },
-        status: { $in: ['ACTIVE', 'COMPLETED'] }
+        status: { $in: ["ACTIVE", "COMPLETED"] },
       });
 
       // Create a map of courseId to enrollment
       const enrollmentMap = {};
-      enrollments.forEach(enrollment => {
+      enrollments.forEach((enrollment) => {
         enrollmentMap[enrollment.courseId.toString()] = enrollment;
       });
 
       // Add enrollment status to each course
-      coursesWithEnrollment = courses.map(course => {
+      coursesWithEnrollment = courses.map((course) => {
         const enrollment = enrollmentMap[course._id.toString()];
         return {
           ...course.toObject(),
-          enrollmentStatus: enrollment ? {
-            isEnrolled: true,
-            enrollmentId: enrollment._id,
-            status: enrollment.status,
-            enrolledAt: enrollment.enrolledAt,
-            progress: enrollment.progress || 0,
-            completedAt: enrollment.completedAt
-          } : {
-            isEnrolled: false,
-            enrollmentId: null,
-            status: null,
-            enrolledAt: null,
-            progress: 0,
-            completedAt: null
-          }
+          enrollmentStatus: enrollment
+            ? {
+                isEnrolled: true,
+                enrollmentId: enrollment._id,
+                status: enrollment.status,
+                enrolledAt: enrollment.enrolledAt,
+                progress: enrollment.progress || 0,
+                completedAt: enrollment.completedAt,
+              }
+            : {
+                isEnrolled: false,
+                enrollmentId: null,
+                status: null,
+                enrolledAt: null,
+                progress: 0,
+                completedAt: null,
+              },
         };
       });
     }
 
-    const result = createPaginationResult(coursesWithEnrollment, total, page, limit);
-    return successResponse(res, result, 'Courses retrieved successfully');
+    const result = createPaginationResult(
+      coursesWithEnrollment,
+      total,
+      page,
+      limit
+    );
+    return successResponse(res, result, "Courses retrieved successfully");
   } catch (error) {
-    logger.error('Get all courses error:', error);
+    logger.error("Get all courses error:", error);
     return errorResponse(res, error);
   }
 };
@@ -100,16 +122,16 @@ export const getCourseCatalog = async (req, res) => {
     const { difficulty, featured, search, topic } = req.query;
 
     // Build query for published courses only
-    const query = { status: 'PUBLISHED' };
-    
+    const query = { status: "PUBLISHED" };
+
     if (difficulty) query.difficulty = difficulty;
-    if (featured) query.featured = featured === 'true';
-    if (topic) query.tags = { $in: [new RegExp(topic, 'i')] };
+    if (featured) query.featured = featured === "true";
+    if (topic) query.tags = { $in: [new RegExp(topic, "i")] };
     if (search) {
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { summary: { $regex: search, $options: 'i' } },
-        { tags: { $in: [new RegExp(search, 'i')] } },
+        { title: { $regex: search, $options: "i" } },
+        { summary: { $regex: search, $options: "i" } },
+        { tags: { $in: [new RegExp(search, "i")] } },
       ];
     }
 
@@ -118,7 +140,7 @@ export const getCourseCatalog = async (req, res) => {
 
     // Get courses with pagination
     const courses = await Course.find(query)
-      .populate('ownerId', 'name email')
+      .populate("ownerId", "name email")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -126,46 +148,48 @@ export const getCourseCatalog = async (req, res) => {
     // Always check enrollment status for authenticated users
     let coursesWithEnrollment = courses;
     if (req.user) {
-      const courseIds = courses.map(course => course._id);
-      
+      const courseIds = courses.map((course) => course._id);
+
       // Get user's enrollments for these courses
       const enrollments = await Enrollment.find({
         userId: req.user._id,
         courseId: { $in: courseIds },
-        status: { $in: ['ACTIVE', 'COMPLETED'] }
+        status: { $in: ["ACTIVE", "COMPLETED"] },
       });
 
       // Create a map of courseId to enrollment
       const enrollmentMap = {};
-      enrollments.forEach(enrollment => {
+      enrollments.forEach((enrollment) => {
         enrollmentMap[enrollment.courseId.toString()] = enrollment;
       });
 
       // Add enrollment status to each course
-      coursesWithEnrollment = courses.map(course => {
+      coursesWithEnrollment = courses.map((course) => {
         const enrollment = enrollmentMap[course._id.toString()];
         return {
           ...course.toObject(),
-          enrollmentStatus: enrollment ? {
-            isEnrolled: true,
-            enrollmentId: enrollment._id,
-            status: enrollment.status,
-            enrolledAt: enrollment.enrolledAt,
-            progress: enrollment.progress || 0,
-            completedAt: enrollment.completedAt
-          } : {
-            isEnrolled: false,
-            enrollmentId: null,
-            status: null,
-            enrolledAt: null,
-            progress: 0,
-            completedAt: null
-          }
+          enrollmentStatus: enrollment
+            ? {
+                isEnrolled: true,
+                enrollmentId: enrollment._id,
+                status: enrollment.status,
+                enrolledAt: enrollment.enrolledAt,
+                progress: enrollment.progress || 0,
+                completedAt: enrollment.completedAt,
+              }
+            : {
+                isEnrolled: false,
+                enrollmentId: null,
+                status: null,
+                enrolledAt: null,
+                progress: 0,
+                completedAt: null,
+              },
         };
       });
     } else {
       // For unauthenticated users, add default enrollment status
-      coursesWithEnrollment = courses.map(course => ({
+      coursesWithEnrollment = courses.map((course) => ({
         ...course.toObject(),
         enrollmentStatus: {
           isEnrolled: false,
@@ -173,15 +197,24 @@ export const getCourseCatalog = async (req, res) => {
           status: null,
           enrolledAt: null,
           progress: 0,
-          completedAt: null
-        }
+          completedAt: null,
+        },
       }));
     }
 
-    const result = createPaginationResult(coursesWithEnrollment, total, page, limit);
-    return successResponse(res, result, 'Course catalog retrieved successfully');
+    const result = createPaginationResult(
+      coursesWithEnrollment,
+      total,
+      page,
+      limit
+    );
+    return successResponse(
+      res,
+      result,
+      "Course catalog retrieved successfully"
+    );
   } catch (error) {
-    logger.error('Get course catalog error:', error);
+    logger.error("Get course catalog error:", error);
     return errorResponse(res, error);
   }
 };
@@ -189,11 +222,24 @@ export const getCourseCatalog = async (req, res) => {
 // POST /courses - Create course (instructor/admin)
 export const createCourse = async (req, res) => {
   try {
-    const { title, summary, description, outcomes, tags, difficulty, estimatedDuration, isPublic, enrollmentLimit, prerequisites } = req.body;
+    const {
+      title,
+      summary,
+      programId,
+      description,
+      outcomes,
+      tags,
+      difficulty,
+      estimatedDuration,
+      isPublic,
+      enrollmentLimit,
+      prerequisites,
+    } = req.body;
 
     const course = new Course({
       title,
       summary,
+      programId,
       description,
       outcomes,
       tags,
@@ -207,11 +253,19 @@ export const createCourse = async (req, res) => {
 
     await course.save();
 
-    const populatedCourse = await Course.findById(course._id).populate('ownerId', 'name email');
+    const populatedCourse = await Course.findById(course._id).populate(
+      "ownerId",
+      "name email"
+    );
 
-    return successResponse(res, { course: populatedCourse }, 'Course created successfully', 201);
+    return successResponse(
+      res,
+      { course: populatedCourse },
+      "Course created successfully",
+      201
+    );
   } catch (error) {
-    logger.error('Create course error:', error);
+    logger.error("Create course error:", error);
     return errorResponse(res, error);
   }
 };
@@ -220,26 +274,28 @@ export const createCourse = async (req, res) => {
 export const getCourseById = async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
-      .populate('ownerId', 'name email')
-      .populate('prerequisites', 'title summary');
+      .populate("ownerId", "name email")
+      .populate("prerequisites", "title summary");
 
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
     // Check if user can access this course
     // In development, allow access to all courses for easier testing
     // In production, only allow access to published courses for non-admin users
-    if (course.status !== 'PUBLISHED' && 
-        req.user?.role !== 'ADMIN' && 
-        course.ownerId._id.toString() !== req.user?._id.toString() &&
-        process.env.NODE_ENV === 'production') {
-      return forbiddenResponse(res, 'Access denied');
+    if (
+      course.status !== "PUBLISHED" &&
+      req.user?.role !== "ADMIN" &&
+      course.ownerId._id.toString() !== req.user?._id.toString() &&
+      process.env.NODE_ENV === "production"
+    ) {
+      return forbiddenResponse(res, "Access denied");
     }
 
-    return successResponse(res, { course }, 'Course retrieved successfully');
+    return successResponse(res, { course }, "Course retrieved successfully");
   } catch (error) {
-    logger.error('Get course by ID error:', error);
+    logger.error("Get course by ID error:", error);
     return errorResponse(res, error);
   }
 };
@@ -250,12 +306,15 @@ export const updateCourse = async (req, res) => {
     const course = await Course.findById(req.params.id);
 
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
     // Check if user can update this course
-    if (req.user.role !== 'ADMIN' && course.ownerId.toString() !== req.user._id.toString()) {
-      return forbiddenResponse(res, 'Access denied');
+    if (
+      req.user.role !== "ADMIN" &&
+      course.ownerId.toString() !== req.user._id.toString()
+    ) {
+      return forbiddenResponse(res, "Access denied");
     }
 
     const updates = req.body;
@@ -263,11 +322,15 @@ export const updateCourse = async (req, res) => {
       req.params.id,
       updates,
       { new: true, runValidators: true }
-    ).populate('ownerId', 'name email');
+    ).populate("ownerId", "name email");
 
-    return successResponse(res, { course: updatedCourse }, 'Course updated successfully');
+    return successResponse(
+      res,
+      { course: updatedCourse },
+      "Course updated successfully"
+    );
   } catch (error) {
-    logger.error('Update course error:', error);
+    logger.error("Update course error:", error);
     return errorResponse(res, error);
   }
 };
@@ -278,19 +341,22 @@ export const deleteCourse = async (req, res) => {
     const course = await Course.findById(req.params.id);
 
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
     // Check if user can delete this course
-    if (req.user.role !== 'ADMIN' && course.ownerId.toString() !== req.user._id.toString()) {
-      return forbiddenResponse(res, 'Access denied');
+    if (
+      req.user.role !== "ADMIN" &&
+      course.ownerId.toString() !== req.user._id.toString()
+    ) {
+      return forbiddenResponse(res, "Access denied");
     }
 
     await Course.findByIdAndDelete(req.params.id);
 
-    return successResponse(res, null, 'Course deleted successfully');
+    return successResponse(res, null, "Course deleted successfully");
   } catch (error) {
-    logger.error('Delete course error:', error);
+    logger.error("Delete course error:", error);
     return errorResponse(res, error);
   }
 };
@@ -301,21 +367,25 @@ export const getLesson = async (req, res) => {
     const { courseId, lessonId } = req.params;
 
     const lesson = await Lesson.findById(lessonId)
-      .populate('sectionId', 'title order')
-      .populate('courseId', 'title status');
+      .populate("sectionId", "title order")
+      .populate("courseId", "title status");
 
     if (!lesson) {
-      return notFoundResponse(res, 'Lesson');
+      return notFoundResponse(res, "Lesson");
     }
 
     // Check if user can access this lesson
-    if (lesson.courseId.status !== 'PUBLISHED' && req.user?.role !== 'ADMIN' && lesson.courseId.ownerId?.toString() !== req.user?._id.toString()) {
-      return forbiddenResponse(res, 'Access denied');
+    if (
+      lesson.courseId.status !== "PUBLISHED" &&
+      req.user?.role !== "ADMIN" &&
+      lesson.courseId.ownerId?.toString() !== req.user?._id.toString()
+    ) {
+      return forbiddenResponse(res, "Access denied");
     }
 
-    return successResponse(res, { lesson }, 'Lesson retrieved successfully');
+    return successResponse(res, { lesson }, "Lesson retrieved successfully");
   } catch (error) {
-    logger.error('Get lesson error:', error);
+    logger.error("Get lesson error:", error);
     return errorResponse(res, error);
   }
 };
@@ -325,42 +395,53 @@ export const updateLesson = async (req, res) => {
   try {
     const { courseId, lessonId } = req.params;
 
-    const lesson = await Lesson.findById(lessonId).populate('courseId', 'ownerId');
+    const lesson = await Lesson.findById(lessonId).populate(
+      "courseId",
+      "ownerId"
+    );
 
     if (!lesson) {
-      return notFoundResponse(res, 'Lesson');
+      return notFoundResponse(res, "Lesson");
     }
 
     // Check if user can update this lesson
-    if (req.user.role !== 'ADMIN' && lesson.courseId.ownerId.toString() !== req.user._id.toString()) {
-      return forbiddenResponse(res, 'Access denied');
+    if (
+      req.user.role !== "ADMIN" &&
+      lesson.courseId.ownerId.toString() !== req.user._id.toString()
+    ) {
+      return forbiddenResponse(res, "Access denied");
     }
 
     const updates = req.body;
-    
+
     // Handle YouTube video ID validation if provided
     if (updates.youtubeVideoId) {
-      const { isValidYouTubeVideoId } = await import('../../../utils/youtube.js');
+      const { isValidYouTubeVideoId } = await import(
+        "../../../utils/youtube.js"
+      );
       if (!isValidYouTubeVideoId(updates.youtubeVideoId)) {
         return res.status(400).json({
           ok: false,
           error: {
-            code: 'INVALID_YOUTUBE_ID',
-            message: 'Invalid YouTube video ID',
+            code: "INVALID_YOUTUBE_ID",
+            message: "Invalid YouTube video ID",
           },
         });
       }
     }
 
-    const updatedLesson = await Lesson.findByIdAndUpdate(
-      lessonId,
-      updates,
-      { new: true, runValidators: true }
-    ).populate('sectionId', 'title order');
+    const updatedLesson = await Lesson.findByIdAndUpdate(lessonId, updates, {
+      new: true,
+      runValidators: true,
+    }).populate("sectionId", "title order");
 
-    return successResponse(res, { lesson: updatedLesson }, 'Lesson updated successfully');
+    return successResponse(
+      res,
+      { lesson: updatedLesson },
+      "Lesson updated successfully"
+    );
   } catch (error) {
-    logger.error('Update lesson error:', error);
+    logger.error("Update lesson error:", error);
     return errorResponse(res, error);
   }
 };
@@ -372,15 +453,18 @@ export const completeLesson = async (req, res) => {
 
     // Check if user is enrolled in the course
     const enrollment = await Enrollment.isUserEnrolled(req.user._id, courseId);
-    if (!enrollment && req.user.role !== 'ADMIN') {
-      return forbiddenResponse(res, 'You must be enrolled in this course to complete lessons');
+    if (!enrollment && req.user.role !== "ADMIN") {
+      return forbiddenResponse(
+        res,
+        "You must be enrolled in this course to complete lessons"
+      );
     }
 
     // In a real implementation, you would update lesson progress
     // For now, we'll just return success
-    return successResponse(res, null, 'Lesson marked as complete');
+    return successResponse(res, null, "Lesson marked as complete");
   } catch (error) {
-    logger.error('Complete lesson error:', error);
+    logger.error("Complete lesson error:", error);
     return errorResponse(res, error);
   }
 };
@@ -398,9 +482,13 @@ export const getLessonProgress = async (req, res) => {
       lastAccessed: null,
     };
 
-    return successResponse(res, { progress }, 'Lesson progress retrieved successfully');
+    return successResponse(
+      res,
+      { progress },
+      "Lesson progress retrieved successfully"
+    );
   } catch (error) {
-    logger.error('Get lesson progress error:', error);
+    logger.error("Get lesson progress error:", error);
     return errorResponse(res, error);
   }
 };
@@ -413,9 +501,9 @@ export const updateLessonProgress = async (req, res) => {
 
     // In a real implementation, you would update lesson progress in a progress model
     // For now, we'll just return success
-    return successResponse(res, null, 'Lesson progress updated successfully');
+    return successResponse(res, null, "Lesson progress updated successfully");
   } catch (error) {
-    logger.error('Update lesson progress error:', error);
+    logger.error("Update lesson progress error:", error);
     return errorResponse(res, error);
   }
 };
@@ -429,16 +517,16 @@ export const createNote = async (req, res) => {
     // In a real implementation, you would create a note in a notes model
     // For now, we'll just return success
     const note = {
-      id: 'temp-id',
+      id: "temp-id",
       content,
       lessonId,
       userId: req.user._id,
       createdAt: new Date(),
     };
 
-    return successResponse(res, { note }, 'Note created successfully', 201);
+    return successResponse(res, { note }, "Note created successfully", 201);
   } catch (error) {
-    logger.error('Create note error:', error);
+    logger.error("Create note error:", error);
     return errorResponse(res, error);
   }
 };
@@ -452,9 +540,9 @@ export const getLessonNotes = async (req, res) => {
     // For now, we'll return empty array
     const notes = [];
 
-    return successResponse(res, { notes }, 'Notes retrieved successfully');
+    return successResponse(res, { notes }, "Notes retrieved successfully");
   } catch (error) {
-    logger.error('Get lesson notes error:', error);
+    logger.error("Get lesson notes error:", error);
     return errorResponse(res, error);
   }
 };
@@ -467,9 +555,9 @@ export const updateNote = async (req, res) => {
 
     // In a real implementation, you would update the note in a notes model
     // For now, we'll just return success
-    return successResponse(res, null, 'Note updated successfully');
+    return successResponse(res, null, "Note updated successfully");
   } catch (error) {
-    logger.error('Update note error:', error);
+    logger.error("Update note error:", error);
     return errorResponse(res, error);
   }
 };
@@ -481,9 +569,9 @@ export const deleteNote = async (req, res) => {
 
     // In a real implementation, you would delete the note from a notes model
     // For now, we'll just return success
-    return successResponse(res, null, 'Note deleted successfully');
+    return successResponse(res, null, "Note deleted successfully");
   } catch (error) {
-    logger.error('Delete note error:', error);
+    logger.error("Delete note error:", error);
     return errorResponse(res, error);
   }
 };
@@ -497,9 +585,13 @@ export const getDiscussions = async (req, res) => {
     // For now, we'll return empty array
     const discussions = [];
 
-    return successResponse(res, { discussions }, 'Discussions retrieved successfully');
+    return successResponse(
+      res,
+      { discussions },
+      "Discussions retrieved successfully"
+    );
   } catch (error) {
-    logger.error('Get discussions error:', error);
+    logger.error("Get discussions error:", error);
     return errorResponse(res, error);
   }
 };
@@ -513,7 +605,7 @@ export const createDiscussion = async (req, res) => {
     // In a real implementation, you would create a discussion in a discussions model
     // For now, we'll just return success
     const discussion = {
-      id: 'temp-id',
+      id: "temp-id",
       title,
       content,
       lessonId,
@@ -521,9 +613,14 @@ export const createDiscussion = async (req, res) => {
       createdAt: new Date(),
     };
 
-    return successResponse(res, { discussion }, 'Discussion created successfully', 201);
+    return successResponse(
+      res,
+      { discussion },
+      "Discussion created successfully",
+      201
+    );
   } catch (error) {
-    logger.error('Create discussion error:', error);
+    logger.error("Create discussion error:", error);
     return errorResponse(res, error);
   }
 };
@@ -536,9 +633,9 @@ export const updateDiscussion = async (req, res) => {
 
     // In a real implementation, you would update the discussion in a discussions model
     // For now, we'll just return success
-    return successResponse(res, null, 'Discussion updated successfully');
+    return successResponse(res, null, "Discussion updated successfully");
   } catch (error) {
-    logger.error('Update discussion error:', error);
+    logger.error("Update discussion error:", error);
     return errorResponse(res, error);
   }
 };
@@ -550,9 +647,9 @@ export const deleteDiscussion = async (req, res) => {
 
     // In a real implementation, you would delete the discussion from a discussions model
     // For now, we'll just return success
-    return successResponse(res, null, 'Discussion deleted successfully');
+    return successResponse(res, null, "Discussion deleted successfully");
   } catch (error) {
-    logger.error('Delete discussion error:', error);
+    logger.error("Delete discussion error:", error);
     return errorResponse(res, error);
   }
 };
@@ -566,16 +663,16 @@ export const addReply = async (req, res) => {
     // In a real implementation, you would add a reply to the discussion in a discussions model
     // For now, we'll just return success
     const reply = {
-      id: 'temp-reply-id',
+      id: "temp-reply-id",
       content,
       discussionId: id,
       userId: req.user._id,
       createdAt: new Date(),
     };
 
-    return successResponse(res, { reply }, 'Reply added successfully', 201);
+    return successResponse(res, { reply }, "Reply added successfully", 201);
   } catch (error) {
-    logger.error('Add reply error:', error);
+    logger.error("Add reply error:", error);
     return errorResponse(res, error);
   }
 };
@@ -589,17 +686,25 @@ export const createSection = async (req, res) => {
     // Check if course exists and user has permission
     const course = await Course.findById(courseId);
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
-    if (course.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
-      return forbiddenResponse(res, 'Only course owner or admin can create sections');
+    if (
+      course.ownerId.toString() !== req.user._id.toString() &&
+      req.user.role !== "ADMIN"
+    ) {
+      return forbiddenResponse(
+        res,
+        "Only course owner or admin can create sections"
+      );
     }
 
     // Get the next order if not provided
     let sectionOrder = order;
     if (!sectionOrder) {
-      const lastSection = await Section.findOne({ courseId }).sort({ order: -1 });
+      const lastSection = await Section.findOne({ courseId }).sort({
+        order: -1,
+      });
       sectionOrder = lastSection ? lastSection.order + 1 : 1;
     }
 
@@ -616,12 +721,19 @@ export const createSection = async (req, res) => {
     if (course.estimatedDuration) {
       // Recalculate based on sections and lessons
       const totalDuration = await calculateCourseDuration(courseId);
-      await Course.findByIdAndUpdate(courseId, { estimatedDuration: totalDuration });
+      await Course.findByIdAndUpdate(courseId, {
+        estimatedDuration: totalDuration,
+      });
     }
 
-    return successResponse(res, { section }, 'Section created successfully', 201);
+    return successResponse(
+      res,
+      { section },
+      "Section created successfully",
+      201
+    );
   } catch (error) {
-    logger.error('Create section error:', error);
+    logger.error("Create section error:", error);
     return errorResponse(res, error);
   }
 };
@@ -634,30 +746,37 @@ export const getCourseSections = async (req, res) => {
     // Check if course exists
     const course = await Course.findById(courseId);
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
     // Check access permissions
     // In development, allow access to all sections for easier testing
     // In production, only allow access to published courses for non-admin users
-    if (course.status !== 'PUBLISHED' && 
-        req.user?.role !== 'ADMIN' && 
-        course.ownerId.toString() !== req.user?._id.toString() &&
-        process.env.NODE_ENV === 'production') {
-      return forbiddenResponse(res, 'Access denied');
+    if (
+      course.status !== "PUBLISHED" &&
+      req.user?.role !== "ADMIN" &&
+      course.ownerId.toString() !== req.user?._id.toString() &&
+      process.env.NODE_ENV === "production"
+    ) {
+      return forbiddenResponse(res, "Access denied");
     }
 
     const sections = await Section.find({ courseId })
       .sort({ order: 1 })
       .populate({
-        path: 'lessons',
-        select: 'title type durationSec isPublished isFree order youtubeVideoId contentUrl thumbnailUrl description',
-        options: { sort: { order: 1 } }
+        path: "lessons",
+        select:
+          "title type durationSec isPublished isFree order youtubeVideoId contentUrl thumbnailUrl description",
+        options: { sort: { order: 1 } },
       });
 
-    return successResponse(res, { sections }, 'Sections retrieved successfully');
+    return successResponse(
+      res,
+      { sections },
+      "Sections retrieved successfully"
+    );
   } catch (error) {
-    logger.error('Get course sections error:', error);
+    logger.error("Get course sections error:", error);
     return errorResponse(res, error);
   }
 };
@@ -671,18 +790,24 @@ export const updateSection = async (req, res) => {
     // Check if course exists
     const course = await Course.findById(courseId);
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
     // Check if section exists
     const section = await Section.findById(sectionId);
     if (!section) {
-      return notFoundResponse(res, 'Section');
+      return notFoundResponse(res, "Section");
     }
 
     // Check permissions
-    if (course.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
-      return forbiddenResponse(res, 'Only course owner or admin can update sections');
+    if (
+      course.ownerId.toString() !== req.user._id.toString() &&
+      req.user.role !== "ADMIN"
+    ) {
+      return forbiddenResponse(
+        res,
+        "Only course owner or admin can update sections"
+      );
     }
 
     const updates = {};
@@ -691,15 +816,18 @@ export const updateSection = async (req, res) => {
     if (order !== undefined) updates.order = order;
     if (isPublished !== undefined) updates.isPublished = isPublished;
 
-    const updatedSection = await Section.findByIdAndUpdate(
-      sectionId,
-      updates,
-      { new: true, runValidators: true }
-    );
+    const updatedSection = await Section.findByIdAndUpdate(sectionId, updates, {
+      new: true,
+      runValidators: true,
+    });
 
-    return successResponse(res, { section: updatedSection }, 'Section updated successfully');
+    return successResponse(
+      res,
+      { section: updatedSection },
+      "Section updated successfully"
+    );
   } catch (error) {
-    logger.error('Update section error:', error);
+    logger.error("Update section error:", error);
     return errorResponse(res, error);
   }
 };
@@ -712,31 +840,41 @@ export const deleteSection = async (req, res) => {
     // Check if course exists
     const course = await Course.findById(courseId);
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
     // Check if section exists
     const section = await Section.findById(sectionId);
     if (!section) {
-      return notFoundResponse(res, 'Section');
+      return notFoundResponse(res, "Section");
     }
 
     // Check permissions
-    if (course.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
-      return forbiddenResponse(res, 'Only course owner or admin can delete sections');
+    if (
+      course.ownerId.toString() !== req.user._id.toString() &&
+      req.user.role !== "ADMIN"
+    ) {
+      return forbiddenResponse(
+        res,
+        "Only course owner or admin can delete sections"
+      );
     }
 
     // Check if section has lessons
     const lessonCount = await Lesson.countDocuments({ sectionId });
     if (lessonCount > 0) {
-      return errorResponse(res, new Error('Cannot delete section with existing lessons'), 400);
+      return errorResponse(
+        res,
+        new Error("Cannot delete section with existing lessons"),
+        400
+      );
     }
 
     await Section.findByIdAndDelete(sectionId);
 
-    return successResponse(res, null, 'Section deleted successfully');
+    return successResponse(res, null, "Section deleted successfully");
   } catch (error) {
-    logger.error('Delete section error:', error);
+    logger.error("Delete section error:", error);
     return errorResponse(res, error);
   }
 };
@@ -750,26 +888,28 @@ export const getSectionLessons = async (req, res) => {
     // Check if course exists
     const course = await Course.findById(courseId);
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
     // Check if section exists
     const section = await Section.findById(sectionId);
     if (!section) {
-      return notFoundResponse(res, 'Section');
+      return notFoundResponse(res, "Section");
     }
 
     // Check if section belongs to the course
     if (section.courseId.toString() !== courseId) {
-      return notFoundResponse(res, 'Section not found in this course');
+      return notFoundResponse(res, "Section not found in this course");
     }
 
     // Check permissions - in development, allow access to all lessons for easier testing
     // In production, only allow access to published lessons for non-admin users
     const query = { sectionId };
-    if (req.user?.role !== 'ADMIN' && 
-        course.ownerId.toString() !== req.user?._id.toString() &&
-        process.env.NODE_ENV === 'production') {
+    if (
+      req.user?.role !== "ADMIN" &&
+      course.ownerId.toString() !== req.user?._id.toString() &&
+      process.env.NODE_ENV === "production"
+    ) {
       query.isPublished = true;
     }
 
@@ -778,15 +918,15 @@ export const getSectionLessons = async (req, res) => {
 
     // Get lessons with pagination
     const lessons = await Lesson.find(query)
-      .populate('sectionId', 'title order')
+      .populate("sectionId", "title order")
       .sort({ order: 1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
     const result = createPaginationResult(lessons, total, page, limit);
-    return successResponse(res, result, 'Lessons retrieved successfully');
+    return successResponse(res, result, "Lessons retrieved successfully");
   } catch (error) {
-    logger.error('Get section lessons error:', error);
+    logger.error("Get section lessons error:", error);
     return errorResponse(res, error);
   }
 };
@@ -794,50 +934,60 @@ export const getSectionLessons = async (req, res) => {
 // POST /courses/:id/sections/:sectionId/lessons - Create lesson
 export const createLesson = async (req, res) => {
   try {
-    const { 
-      title, 
-      type, 
-      content, 
-      youtubeVideoId, 
-      externalUrl, 
-      order, 
-      durationSec, 
-      isPublished, 
-      isFree, 
-      notes 
+    const {
+      title,
+      type,
+      content,
+      youtubeVideoId,
+      externalUrl,
+      order,
+      durationSec,
+      isPublished,
+      isFree,
+      notes,
     } = req.body;
-    
+
     const { id: courseId, sectionId } = req.params;
 
     // Check if course exists
     const course = await Course.findById(courseId);
     if (!course) {
-      return notFoundResponse(res, 'Course');
+      return notFoundResponse(res, "Course");
     }
 
     // Check if section exists
     const section = await Section.findById(sectionId);
     if (!section) {
-      return notFoundResponse(res, 'Section');
+      return notFoundResponse(res, "Section");
     }
 
     // Check permissions
-    if (course.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
-      return forbiddenResponse(res, 'Only course owner or admin can create lessons');
+    if (
+      course.ownerId.toString() !== req.user._id.toString() &&
+      req.user.role !== "ADMIN"
+    ) {
+      return forbiddenResponse(
+        res,
+        "Only course owner or admin can create lessons"
+      );
     }
 
     // Validate YouTube video ID if provided
     if (youtubeVideoId) {
-      const { isValidYouTubeVideoId } = await import('../../../utils/youtube.js');
+      const { isValidYouTubeVideoId } = await import(
+        "../../../utils/youtube.js"
+      );
       if (!isValidYouTubeVideoId(youtubeVideoId)) {
-        return errorResponse(res, new Error('Invalid YouTube video ID'), 400);
+        return errorResponse(res, new Error("Invalid YouTube video ID"), 400);
       }
     }
 
     // Get the next order if not provided
     let lessonOrder = order;
     if (!lessonOrder) {
-      const lastLesson = await Lesson.findOne({ sectionId }).sort({ order: -1 });
+      const lastLesson = await Lesson.findOne({ sectionId }).sort({
+        order: -1,
+      });
       lessonOrder = lastLesson ? lastLesson.order + 1 : 1;
     }
 
@@ -861,12 +1011,14 @@ export const createLesson = async (req, res) => {
     // Update course's estimated duration
     if (course.estimatedDuration) {
       const totalDuration = await calculateCourseDuration(courseId);
-      await Course.findByIdAndUpdate(courseId, { estimatedDuration: totalDuration });
+      await Course.findByIdAndUpdate(courseId, {
+        estimatedDuration: totalDuration,
+      });
     }
 
-    return successResponse(res, { lesson }, 'Lesson created successfully', 201);
+    return successResponse(res, { lesson }, "Lesson created successfully", 201);
   } catch (error) {
-    logger.error('Create lesson error:', error);
+    logger.error("Create lesson error:", error);
     return errorResponse(res, error);
   }
 };
@@ -888,7 +1040,7 @@ const calculateCourseDuration = async (courseId) => {
 
     return Math.ceil(totalDuration / 60); // Convert to minutes
   } catch (error) {
-    logger.error('Calculate course duration error:', error);
+    logger.error("Calculate course duration error:", error);
     return 0;
   }
 };
