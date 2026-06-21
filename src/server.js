@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
@@ -25,6 +26,9 @@ import analyticsRoutes from "./modules/analytics/routes/analytics.js";
 import assessmentRoutes from "./modules/assessments/routes/assessments.js";
 import courseMaterialRoutes from "./modules/courses/routes/courseMaterials.js";
 import announcementRoutes from "./modules/announcements/routes/announcements.js";
+import taskRoutes from "./modules/tasks/routes/tasks.js";
+import submissionRoutes from "./modules/tasks/routes/submissions.js";
+import { initSocket } from "./socket/index.js";
 
 const app = express();
 
@@ -125,6 +129,8 @@ app.use("/api/v1/analytics", analyticsRoutes);
 app.use("/api/v1/assessments", assessmentRoutes);
 app.use("/api/v1/course-materials", courseMaterialRoutes);
 app.use("/api/v1/announcements", announcementRoutes);
+app.use("/api/v1/tasks", taskRoutes);
+app.use("/api/v1/submissions", submissionRoutes);
 
 // Temporary welcome route
 app.get("/api/v1", (req, res) => {
@@ -174,11 +180,15 @@ const startServer = async () => {
     await connectDatabase();
 
     // Start listening
-    const server = app.listen(config.server.port, () => {
+    const httpServer = http.createServer(app);
+    initSocket(httpServer);
+
+    httpServer.listen(config.server.port, () => {
       logger.info(`🚀 Server running on port ${config.server.port}`);
       logger.info(`This is the allowed origins: ${config.cors.allowedOrigins}`);
       logger.info(`📊 Environment: ${config.server.nodeEnv}`);
       logger.info(`🌐 API Base URL: ${config.server.apiBaseUrl}`);
+      logger.info(`🔌 WebSocket: enabled on /socket.io`);
       logger.info(
         `📧 Email Service: ${config.email.provider} (${config.email.provider === "nodemailer" ? config.email.nodemailer.from : config.email.resend.fromEmail || "Not configured"})`
       );
@@ -188,7 +198,7 @@ const startServer = async () => {
     // Graceful shutdown for server
     process.on("SIGTERM", () => {
       logger.info("SIGTERM received, closing server");
-      server.close(() => {
+      httpServer.close(() => {
         logger.info("Server closed");
         process.exit(0);
       });

@@ -13,6 +13,7 @@ import {
   deleteAnnouncement,
   markAsRead,
   getAllAnnouncements,
+  getAdminAnnouncementStats,
 } from '../controllers/announcementController.js';
 
 const router = express.Router();
@@ -78,6 +79,11 @@ const announcementIdSchema = z.object({
 // Public routes (require authentication)
 router.get('/', requireAuth, asyncHandler(getAnnouncements));
 router.get('/unread-count', requireAuth, asyncHandler(getUnreadCount));
+
+// Admin-only routes (before /:id so paths like /admin are not captured as ids)
+router.get('/admin/stats', requireAuth, requireAdmin, asyncHandler(getAdminAnnouncementStats));
+router.get('/admin/all', requireAuth, requireAdmin, asyncHandler(getAllAnnouncements));
+
 router.get('/:id', requireAuth, validateParams(announcementIdSchema), asyncHandler(getAnnouncementById));
 router.post('/:id/read', requireAuth, validateParams(announcementIdSchema), asyncHandler(markAsRead));
 
@@ -85,8 +91,5 @@ router.post('/:id/read', requireAuth, validateParams(announcementIdSchema), asyn
 router.post('/', requireAuth, requireInstructor, validateBody(createAnnouncementSchema), asyncHandler(createAnnouncement));
 router.put('/:id', requireAuth, validateParams(announcementIdSchema), validateBody(updateAnnouncementSchema), asyncHandler(updateAnnouncement));
 router.delete('/:id', requireAuth, validateParams(announcementIdSchema), asyncHandler(deleteAnnouncement));
-
-// Admin-only routes
-router.get('/admin/all', requireAuth, requireAdmin, asyncHandler(getAllAnnouncements));
 
 export default router;

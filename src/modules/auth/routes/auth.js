@@ -13,7 +13,6 @@ import {
   resendVerification,
   acceptInvite,
   completeInvite,
-  debugToken,
 } from '../controllers/authController.js';
 
 const router = express.Router();
@@ -60,7 +59,6 @@ router.post('/register', validateBody(registerSchema), asyncHandler(register));
 router.post('/login', validateBody(loginSchema), asyncHandler(login));
 router.post('/logout', asyncHandler(logout));
 router.post('/refresh', validateBody(refreshSchema), asyncHandler(refresh));
-router.get('/debug-token', asyncHandler(debugToken));
 router.post('/forgot-password', validateBody(forgotPasswordSchema), asyncHandler(forgotPassword));
 router.post('/reset-password', validateBody(resetPasswordSchema), asyncHandler(resetPassword));
 router.get('/verify-email', asyncHandler(verifyEmail));

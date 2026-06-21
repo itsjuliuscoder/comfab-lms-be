@@ -11,6 +11,102 @@ import {
   createPaginationResult,
 } from "../../../utils/pagination.js";
 
+const PROGRAM_STATUS_OUT = {
+  INACTIVE: "PAUSED",
+  ARCHIVED: "CANCELLED",
+};
+
+const LOCATION_TYPE_OUT = {
+  ONSITE: "IN_PERSON",
+};
+
+const LOCATION_TYPE_IN = {
+  IN_PERSON: "IN_PERSON",
+  ONLINE: "ONLINE",
+  HYBRID: "HYBRID",
+};
+
+const PROGRAM_STATUS_IN = {
+  DRAFT: ["DRAFT"],
+  ACTIVE: ["ACTIVE"],
+  PAUSED: ["PAUSED", "INACTIVE"],
+  COMPLETED: ["COMPLETED"],
+  CANCELLED: ["CANCELLED", "ARCHIVED"],
+};
+
+const normalizeProgramStatus = (status) => PROGRAM_STATUS_OUT[status] || status;
+const normalizeLocationType = (type) => LOCATION_TYPE_OUT[type] || type;
+
+const toFrontendProgram = (programDoc) => {
+  if (!programDoc) return null;
+
+  const program = typeof programDoc.toObject === "function"
+    ? programDoc.toObject({ virtuals: true })
+    : { ...programDoc };
+
+  return {
+    ...program,
+    id: program.id || program._id?.toString(),
+    status: normalizeProgramStatus(program.status),
+    enrollmentCount: program.enrollmentCount ?? program.currentParticipants ?? 0,
+    completionRate: program.completionRate ?? 0,
+    averageScore: program.averageScore ?? 0,
+    location: program.location
+      ? {
+          ...program.location,
+          type: normalizeLocationType(program.location.type),
+        }
+      : program.location,
+  };
+};
+
+const toFrontendCohort = (cohortDoc) => {
+  if (!cohortDoc) return null;
+
+  const cohort = typeof cohortDoc.toObject === "function"
+    ? cohortDoc.toObject({ virtuals: true })
+    : { ...cohortDoc };
+
+  return {
+    ...cohort,
+    id: cohort.id || cohort._id?.toString(),
+    status: cohort.status === "INACTIVE" ? "CANCELLED" : cohort.status,
+    currentParticipants:
+      cohort.currentParticipants ??
+      cohort.activeParticipants ??
+      cohort.participantCount ??
+      0,
+    coordinator: cohort.coordinator || cohort.createdBy || null,
+    participants: cohort.participants || [],
+  };
+};
+
+const buildProgramStatusCondition = (status) => {
+  const values = PROGRAM_STATUS_IN[status] || [status];
+  return values.length === 1 ? values[0] : { $in: values };
+};
+
+const applyProgramInputNormalization = (payload = {}) => {
+  if (!payload.location?.type && !payload.status) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    ...(payload.status ? { status: normalizeProgramStatus(payload.status) } : {}),
+    ...(payload.location
+      ? {
+          location: {
+            ...payload.location,
+            ...(payload.location.type
+              ? { type: LOCATION_TYPE_IN[payload.location.type] || payload.location.type }
+              : {}),
+          },
+        }
+      : {}),
+  };
+};
+
 // GET /programs - Get all programs
 export const getAllPrograms = async (req, res) => {
   try {
@@ -18,65 +114,73 @@ export const getAllPrograms = async (req, res) => {
     const { status, isPublic, ownerId, coordinatorId, search, enrollmentOpen } =
       req.query;
 
-    // Build query
-    const query = {};
+    const conditions = [];
 
-    // Filter by status
     if (status) {
-      query.status = status;
+      conditions.push({ status: buildProgramStatusCondition(status) });
     }
 
-    // Filter by public/private
     if (isPublic !== undefined) {
-      query.isPublic = isPublic === "true";
+      conditions.push({ isPublic: isPublic === "true" });
     }
 
-    // Filter by owner
     if (ownerId) {
-      query.ownerId = ownerId;
+      conditions.push({ ownerId });
     }
 
-    // Filter by coordinator
     if (coordinatorId) {
-      query.coordinatorId = coordinatorId;
+      conditions.push({ coordinatorId });
     }
 
-    // Filter by enrollment status
     if (enrollmentOpen !== undefined) {
       const now = new Date();
+      const openCondition = {
+        enrollmentOpen: true,
+        enrollmentStartDate: { $lte: now },
+        enrollmentEndDate: { $gte: now },
+        $expr: { $lt: ["$currentParticipants", "$maxParticipants"] },
+      };
+
       if (enrollmentOpen === "true") {
-        query.enrollmentOpen = true;
-        query.enrollmentStartDate = { $lte: now };
-        query.enrollmentEndDate = { $gte: now };
-        query.currentParticipants = { $lt: "$maxParticipants" };
+        conditions.push(openCondition);
       } else {
-        query.$or = [
-          { enrollmentOpen: false },
-          { enrollmentStartDate: { $gt: now } },
-          { enrollmentEndDate: { $lt: now } },
-          { currentParticipants: { $gte: "$maxParticipants" } },
-        ];
+        conditions.push({
+          $or: [
+            { enrollmentOpen: false },
+            { enrollmentStartDate: { $gt: now } },
+            { enrollmentEndDate: { $lt: now } },
+            { $expr: { $gte: ["$currentParticipants", "$maxParticipants"] } },
+          ],
+        });
       }
     }
 
-    // Search functionality
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { code: { $regex: search, $options: "i" } },
-        { tags: { $in: [new RegExp(search, "i")] } },
-      ];
+      conditions.push({
+        $or: [
+          { name: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+          { code: { $regex: search, $options: "i" } },
+          { tags: { $in: [new RegExp(search, "i")] } },
+        ],
+      });
     }
 
-    // For non-admin users, only show public programs or programs they're involved in
-    if (req.user?.role !== "ADMIN") {
-      query.$or = [
-        { isPublic: true },
-        { ownerId: req.user?._id },
-        { coordinatorId: req.user?._id },
-      ];
+    if (!req.user || req.user.role === "PARTICIPANT") {
+      conditions.push({ isPublic: true });
+      conditions.push({ status: buildProgramStatusCondition("ACTIVE") });
+    } else if (req.user.role !== "ADMIN") {
+      const visibilityConditions = [{ isPublic: true }];
+
+      if (req.user?._id) {
+        visibilityConditions.push({ ownerId: req.user._id });
+        visibilityConditions.push({ coordinatorId: req.user._id });
+      }
+
+      conditions.push({ $or: visibilityConditions });
     }
+
+    const query = conditions.length > 0 ? { $and: conditions } : {};
 
     // Get total count
     const total = await Program.countDocuments(query);
@@ -91,7 +195,8 @@ export const getAllPrograms = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const result = createPaginationResult(programs, total, page, limit);
+    const serializedPrograms = programs.map(toFrontendProgram);
+    const result = createPaginationResult(serializedPrograms, total, page, limit);
 
     logger.info("Get all programs", {
       total,
@@ -137,19 +242,28 @@ export const getProgramById = async (req, res) => {
       return notFoundResponse(res, "Program");
     }
 
-    // Check access permissions
+    const userId = req.user?._id?.toString();
+    const isAdmin = req.user?.role === "ADMIN";
+    const isOwner = userId && program.ownerId?._id?.toString() === userId;
+    const isCoordinator =
+      userId && program.coordinatorId?._id?.toString() === userId;
+
     if (
-      req.user?.role !== "ADMIN" &&
-      program.ownerId._id.toString() !== req.user?._id.toString() &&
-      program.coordinatorId._id.toString() !== req.user?._id.toString() &&
-      !program.isPublic
+      (!program.isPublic || normalizeProgramStatus(program.status) !== "ACTIVE") &&
+      !isAdmin &&
+      !isOwner &&
+      !isCoordinator
     ) {
       return forbiddenResponse(res, "Access denied to this program");
     }
 
     logger.info("Get program by ID", { programId: id, userId: req.user?._id });
 
-    return successResponse(res, program, "Program retrieved successfully");
+    return successResponse(
+      res,
+      toFrontendProgram(program),
+      "Program retrieved successfully"
+    );
   } catch (error) {
     logger.error("Get program by ID error:", error);
     return errorResponse(res, error);
@@ -160,7 +274,7 @@ export const getProgramById = async (req, res) => {
 export const createProgram = async (req, res) => {
   try {
     const programData = {
-      ...req.body,
+      ...applyProgramInputNormalization(req.body),
       ownerId: req.user._id,
     };
 
@@ -192,7 +306,12 @@ export const createProgram = async (req, res) => {
       createdBy: req.user._id,
     });
 
-    return successResponse(res, program, "Program created successfully", 201);
+    return successResponse(
+      res,
+      toFrontendProgram(program),
+      "Program created successfully",
+      201
+    );
   } catch (error) {
     logger.error("Create program error:", error);
     return errorResponse(res, error);
@@ -203,7 +322,7 @@ export const createProgram = async (req, res) => {
 export const updateProgram = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = applyProgramInputNormalization(req.body);
 
     const program = await Program.findById(id);
     if (!program) {
@@ -251,7 +370,11 @@ export const updateProgram = async (req, res) => {
       changes: Object.keys(updateData),
     });
 
-    return successResponse(res, program, "Program updated successfully");
+    return successResponse(
+      res,
+      toFrontendProgram(program),
+      "Program updated successfully"
+    );
   } catch (error) {
     logger.error("Update program error:", error);
     return errorResponse(res, error);
@@ -330,10 +453,16 @@ export const getProgramCourses = async (req, res) => {
     }
 
     // Check access permissions
+    const userId = req.user?._id?.toString();
+    const isAdmin = req.user?.role === "ADMIN";
+    const isOwner = userId && program.ownerId.toString() === userId;
+    const isCoordinator = userId && program.coordinatorId.toString() === userId;
+    const includeCohorts = Boolean(isAdmin || isOwner || isCoordinator);
+
     if (
-      req.user?.role !== "ADMIN" &&
-      program.ownerId.toString() !== req.user?._id.toString() &&
-      program.coordinatorId.toString() !== req.user?._id.toString() &&
+      !isAdmin &&
+      !isOwner &&
+      !isCoordinator &&
       !program.isPublic
     ) {
       return forbiddenResponse(res, "Access denied to this program");
@@ -345,10 +474,11 @@ export const getProgramCourses = async (req, res) => {
 
     // For non-admin users, only show published courses
     if (
-      req.user?.role !== "ADMIN" &&
-      program.ownerId.toString() !== req.user?._id.toString()
+      !isAdmin &&
+      !isOwner
     ) {
       query.status = "PUBLISHED";
+      query.isPublic = true;
     }
 
     const total = await Course.countDocuments(query);
@@ -358,7 +488,23 @@ export const getProgramCourses = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const result = createPaginationResult(courses, total, page, limit);
+    if (includeCohorts) {
+      await Promise.all(
+        courses.map((course) =>
+          course.populate?.("cohortIds", "name status programId")
+        )
+      );
+    }
+
+    const { toFrontendCourse } = await import("../../courses/controllers/courseController.js");
+    const result = createPaginationResult(
+      courses.map((course) =>
+        toFrontendCourse(course, { includeCohorts })
+      ),
+      total,
+      page,
+      limit
+    );
 
     logger.info("Get program courses", {
       programId: id,
@@ -389,10 +535,15 @@ export const getProgramCohorts = async (req, res) => {
     }
 
     // Check access permissions
+    const userId = req.user?._id?.toString();
+    const isAdmin = req.user?.role === "ADMIN";
+    const isOwner = userId && program.ownerId.toString() === userId;
+    const isCoordinator = userId && program.coordinatorId.toString() === userId;
+
     if (
-      req.user?.role !== "ADMIN" &&
-      program.ownerId.toString() !== req.user?._id.toString() &&
-      program.coordinatorId.toString() !== req.user?._id.toString() &&
+      !isAdmin &&
+      !isOwner &&
+      !isCoordinator &&
       !program.isPublic
     ) {
       return forbiddenResponse(res, "Access denied to this program");
@@ -404,8 +555,8 @@ export const getProgramCohorts = async (req, res) => {
 
     // For non-admin users, only show active cohorts
     if (
-      req.user?.role !== "ADMIN" &&
-      program.ownerId.toString() !== req.user?._id.toString()
+      !isAdmin &&
+      !isOwner
     ) {
       query.status = "ACTIVE";
     }
@@ -417,7 +568,12 @@ export const getProgramCohorts = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const result = createPaginationResult(cohorts, total, page, limit);
+    const result = createPaginationResult(
+      cohorts.map(toFrontendCohort),
+      total,
+      page,
+      limit
+    );
 
     logger.info("Get program cohorts", {
       programId: id,
@@ -457,75 +613,98 @@ export const getProgramStatistics = async (req, res) => {
 
     const { Course } = await import("../../courses/models/Course.js");
     const { Cohort } = await import("../../cohorts/models/Cohort.js");
-    const { Enrollment } = await import(
-      "../../enrollments/models/Enrollment.js"
+    const UserProgram = (await import("../models/UserProgram.js")).default;
+
+    const [
+      totalCourses,
+      totalCohorts,
+      activeCohorts,
+      totalEnrollments,
+      activeEnrollments,
+      completedEnrollments,
+      completionAverage,
+      enrollmentTrends,
+      completionTrends,
+    ] = await Promise.all([
+      Course.countDocuments({ programId: program._id }),
+      Cohort.countDocuments({ programId: program._id }),
+      Cohort.countDocuments({
+        programId: program._id,
+        status: { $in: ["ACTIVE"] },
+      }),
+      UserProgram.countDocuments({ programId: program._id }),
+      UserProgram.countDocuments({ programId: program._id, status: "ACTIVE" }),
+      UserProgram.countDocuments({
+        programId: program._id,
+        status: "COMPLETED",
+      }),
+      UserProgram.aggregate([
+        { $match: { programId: program._id } },
+        {
+          $group: {
+            _id: null,
+            averageProgress: { $avg: "$completionPercentage" },
+          },
+        },
+      ]),
+      UserProgram.aggregate([
+        { $match: { programId: program._id } },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: "%Y-%m-%d", date: "$enrolledAt" },
+            },
+            enrollments: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+      UserProgram.aggregate([
+        {
+          $match: {
+            programId: program._id,
+            completedAt: { $ne: null },
+            status: "COMPLETED",
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: "%Y-%m-%d", date: "$completedAt" },
+            },
+            completions: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+    ]);
+
+    const averageProgress = Math.round(
+      completionAverage[0]?.averageProgress || 0
     );
-
-    // Get course statistics
-    const courseStats = await Course.aggregate([
-      { $match: { programId: program._id } },
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    // Get cohort statistics
-    const cohortStats = await Cohort.aggregate([
-      { $match: { programId: program._id } },
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    // Get enrollment statistics
-    const enrollmentStats = await Enrollment.aggregate([
-      {
-        $lookup: {
-          from: "courses",
-          localField: "courseId",
-          foreignField: "_id",
-          as: "course",
-        },
-      },
-      { $unwind: "$course" },
-      { $match: { "course.programId": program._id } },
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    const completionRate =
+      totalEnrollments > 0
+        ? Math.round((completedEnrollments / totalEnrollments) * 100)
+        : 0;
 
     const statistics = {
-      program: {
-        name: program.name,
-        code: program.code,
-        status: program.status,
-        currentParticipants: program.currentParticipants,
-        maxParticipants: program.maxParticipants,
-        capacityPercentage: program.capacityPercentage,
-        enrollmentStatus: program.enrollmentStatus,
-        progress: program.progress,
-      },
-      courses: courseStats.reduce((acc, stat) => {
-        acc[stat._id] = stat.count;
-        return acc;
-      }, {}),
-      cohorts: cohortStats.reduce((acc, stat) => {
-        acc[stat._id] = stat.count;
-        return acc;
-      }, {}),
-      enrollments: enrollmentStats.reduce((acc, stat) => {
-        acc[stat._id] = stat.count;
-        return acc;
-      }, {}),
+      totalEnrollments,
+      activeEnrollments,
+      completedEnrollments,
+      completionRate,
+      averageScore: 0,
+      totalCohorts,
+      activeCohorts,
+      totalCourses,
+      averageProgress,
+      enrollmentTrends: enrollmentTrends.map((item) => ({
+        date: item._id,
+        enrollments: item.enrollments,
+      })),
+      completionTrends: completionTrends.map((item) => ({
+        date: item._id,
+        completions: item.completions,
+      })),
     };
 
     logger.info("Get program statistics", {
@@ -566,7 +745,7 @@ export const enrollInProgram = async (req, res) => {
     }
 
     // Check if user is already enrolled
-    const { UserProgram } = await import("../models/UserProgram.js");
+    const UserProgram = (await import("../models/UserProgram.js")).default;
     const existingEnrollment = await UserProgram.findOne({
       userId: req.user._id,
       programId: id,
@@ -582,26 +761,34 @@ export const enrollInProgram = async (req, res) => {
       });
     }
 
-    // Add participant to program
-    const added = program.addParticipant();
-    if (!added) {
-      return res.status(400).json({
-        ok: false,
-        error: {
-          code: "PROGRAM_FULL",
-          message: "Program has reached maximum capacity",
-        },
-      });
+    const requiresApproval = Boolean(program.settings?.requireApproval);
+    if (!program.settings?.allowSelfEnrollment && !requiresApproval) {
+      return forbiddenResponse(
+        res,
+        "This program does not accept self-enrollment"
+      );
     }
 
-    await program.save();
+    if (!requiresApproval) {
+      const added = program.addParticipant();
+      if (!added) {
+        return res.status(400).json({
+          ok: false,
+          error: {
+            code: "PROGRAM_FULL",
+            message: "Program has reached maximum capacity",
+          },
+        });
+      }
+      await program.save();
+    }
 
     // Create user program enrollment
     const userProgram = new UserProgram({
       userId: req.user._id,
       programId: id,
       enrolledAt: new Date(),
-      status: "ACTIVE",
+      status: requiresApproval ? "PENDING" : "ACTIVE",
     });
 
     await userProgram.save();
@@ -615,13 +802,43 @@ export const enrollInProgram = async (req, res) => {
     return successResponse(
       res,
       {
-        program: program,
+        program: toFrontendProgram(program),
         enrollment: userProgram,
       },
-      "Successfully enrolled in program"
+      requiresApproval
+        ? "Enrollment request submitted for review"
+        : "Successfully enrolled in program",
+      requiresApproval ? 202 : 200
     );
   } catch (error) {
     logger.error("Enroll in program error:", error);
+    return errorResponse(res, error);
+  }
+};
+
+// GET /programs/my-enrollments - Get current user's enrolled programs
+export const getMyProgramEnrollments = async (req, res) => {
+  try {
+    const UserProgram = (await import("../models/UserProgram.js")).default;
+
+    const enrollments = await UserProgram.find({ userId: req.user._id })
+      .populate("programId")
+      .sort({ enrolledAt: -1 });
+
+    const programs = enrollments
+      .filter((enrollment) => enrollment.programId)
+      .map((enrollment) => ({
+        ...toFrontendProgram(enrollment.programId),
+        userEnrollmentStatus: enrollment.status,
+      }));
+
+    return successResponse(
+      res,
+      { data: programs, programs },
+      "Program enrollments retrieved successfully"
+    );
+  } catch (error) {
+    logger.error("Get my program enrollments error:", error);
     return errorResponse(res, error);
   }
 };

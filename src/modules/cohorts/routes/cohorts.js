@@ -19,6 +19,10 @@ import {
   removeMemberFromCohort,
   getUserCohorts,
 } from "../controllers/cohortController.js";
+import {
+  getCohortMessages,
+  deleteCohortMessage,
+} from "../../cohort-chat/controllers/cohortChatController.js";
 
 const router = express.Router();
 
@@ -138,6 +142,14 @@ router.delete(
   requireAuth,
   requireInstructor,
   asyncHandler(removeMemberFromCohort)
+);
+
+// Cohort chat routes
+router.get("/:id/messages", requireAuth, asyncHandler(getCohortMessages));
+router.delete(
+  "/:id/messages/:messageId",
+  requireAuth,
+  asyncHandler(deleteCohortMessage)
 );
 
 export default router;

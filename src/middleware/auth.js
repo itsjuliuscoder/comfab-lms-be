@@ -19,6 +19,10 @@ export const requireAuth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, config.jwt.secret);
+
+    if (decoded.tokenType && decoded.tokenType !== 'access') {
+      return unauthorizedResponse(res, 'Invalid token');
+    }
     
     const user = await User.findById(decoded.userId).select('-password');
     
@@ -66,6 +70,10 @@ export const optionalAuth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, config.jwt.secret);
+
+    if (decoded.tokenType && decoded.tokenType !== 'access') {
+      return next();
+    }
     
     const user = await User.findById(decoded.userId).select('-password');
     
@@ -82,13 +90,13 @@ export const optionalAuth = async (req, res, next) => {
 
 export const generateTokens = (userId) => {
   const accessToken = jwt.sign(
-    { userId },
+    { userId, tokenType: 'access' },
     config.jwt.secret,
     { expiresIn: config.jwt.expiresIn }
   );
 
   const refreshToken = jwt.sign(
-    { userId },
+    { userId, tokenType: 'refresh' },
     config.jwt.secret,
     { expiresIn: config.jwt.refreshExpiresIn }
   );
@@ -99,6 +107,13 @@ export const generateTokens = (userId) => {
 export const verifyRefreshToken = (refreshToken) => {
   try {
     const decoded = jwt.verify(refreshToken, config.jwt.secret);
+
+    if (decoded.tokenType !== 'refresh') {
+      const error = new Error('Invalid refresh token');
+      error.name = 'JsonWebTokenError';
+      throw error;
+    }
+
     return decoded;
   } catch (error) {
     logger.error('Refresh token verification error:', error);

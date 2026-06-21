@@ -1,7 +1,16 @@
+import mongoose from "mongoose";
 import { Course } from "../models/Course.js";
 import { Section } from "../models/Section.js";
 import { Lesson } from "../models/Lesson.js";
+import { LessonProgress } from "../models/LessonProgress.js";
 import { Enrollment } from "../../enrollments/models/Enrollment.js";
+import {
+  assertObjectIds,
+  getLessonInCourse,
+  canAccessLessonProgress,
+  syncEnrollmentProgressFromLessons,
+} from "../services/lessonProgressService.js";
+import { assertRequiredTasksSubmitted } from "../../tasks/services/taskCompletionService.js";
 import { uploadToCloudinary } from "../../../config/cloudinary.js";
 import {
   successResponse,
@@ -15,6 +24,114 @@ import {
 } from "../../../utils/pagination.js";
 import { logger } from "../../../utils/logger.js";
 
+const COURSE_LEVEL_MAP = {
+  BEGINNER: "Beginner",
+  INTERMEDIATE: "Intermediate",
+  ADVANCED: "Advanced",
+};
+
+const normalizeCohortIds = (cohortIds) =>
+  Array.from(
+    new Set(
+      (cohortIds || [])
+        .map((cohortId) => cohortId?.toString().trim())
+        .filter(Boolean)
+    )
+  );
+
+const buildCohortSummary = (cohortDoc) => {
+  if (!cohortDoc) return null;
+
+  const cohort =
+    typeof cohortDoc.toObject === "function"
+      ? cohortDoc.toObject({ virtuals: true })
+      : { ...cohortDoc };
+
+  return {
+    id: cohort.id || cohort._id?.toString(),
+    name: cohort.name,
+    status: cohort.status,
+    programId: cohort.programId?.toString?.() || cohort.programId,
+  };
+};
+
+const loadValidatedCohorts = async (programId, cohortIds = []) => {
+  const uniqueCohortIds = normalizeCohortIds(cohortIds);
+
+  if (uniqueCohortIds.length === 0) {
+    return { cohortIds: [], cohorts: [] };
+  }
+
+  const invalidIds = uniqueCohortIds.filter(
+    (cohortId) => !mongoose.isValidObjectId(cohortId)
+  );
+
+  if (invalidIds.length > 0) {
+    const error = new Error("One or more selected cohorts are invalid");
+    error.statusCode = 400;
+    error.code = "INVALID_COHORT_IDS";
+    throw error;
+  }
+
+  const { Cohort } = await import("../../cohorts/models/Cohort.js");
+  const cohorts = await Cohort.find({
+    _id: { $in: uniqueCohortIds },
+    programId,
+  }).select("_id name status programId");
+
+  if (cohorts.length !== uniqueCohortIds.length) {
+    const error = new Error(
+      "One or more selected cohorts do not belong to this program"
+    );
+    error.statusCode = 400;
+    error.code = "INVALID_COHORT_PROGRAM";
+    throw error;
+  }
+
+  const cohortMap = new Map(
+    cohorts.map((cohort) => [cohort._id.toString(), cohort])
+  );
+
+  return {
+    cohortIds: uniqueCohortIds,
+    cohorts: uniqueCohortIds
+      .map((cohortId) => cohortMap.get(cohortId))
+      .filter(Boolean),
+  };
+};
+
+export const toFrontendCourse = (courseDoc, options = {}) => {
+  if (!courseDoc) return null;
+
+  const course = typeof courseDoc.toObject === "function"
+    ? courseDoc.toObject({ virtuals: true })
+    : { ...courseDoc };
+
+  const includeCohorts = Boolean(options.includeCohorts);
+  const cohortSummaries = Array.isArray(course.cohortIds)
+    ? course.cohortIds
+        .map((cohort) => buildCohortSummary(cohort))
+        .filter(Boolean)
+    : [];
+  const { cohortIds, ...restCourse } = course;
+
+  return {
+    ...restCourse,
+    id: course.id || course._id?.toString(),
+    description: course.description || course.summary || "",
+    level: course.level || COURSE_LEVEL_MAP[course.difficulty] || undefined,
+    duration: course.duration ?? course.estimatedDuration ?? 0,
+    enrollmentCount: course.enrollmentCount ?? 0,
+    ...(includeCohorts
+      ? {
+          cohortIds: normalizeCohortIds(cohortIds),
+          cohortCount: cohortSummaries.length,
+          cohorts: cohortSummaries,
+        }
+      : {}),
+  };
+};
+
 // GET /courses - Get all courses with enrollment status
 export const getAllCourses = async (req, res) => {
   try {
@@ -25,6 +142,8 @@ export const getAllCourses = async (req, res) => {
       featured,
       search,
       ownerId,
+      programId,
+      isPublic,
       includeEnrollmentStatus,
     } = req.query;
 
@@ -34,6 +153,8 @@ export const getAllCourses = async (req, res) => {
     if (difficulty) query.difficulty = difficulty;
     if (featured) query.featured = featured === "true";
     if (ownerId) query.ownerId = ownerId;
+    if (programId) query.programId = programId;
+    if (isPublic !== undefined) query.isPublic = isPublic === "true";
     if (search) {
       query.$or = [
         { title: { $regex: search, $options: "i" } },
@@ -42,24 +163,39 @@ export const getAllCourses = async (req, res) => {
       ];
     }
 
-    // For non-admin users, only show published courses in production
-    // In development, show all courses for easier testing
-    if (req.user?.role !== "ADMIN" && process.env.NODE_ENV === "production") {
+    const isAdmin = req.user?.role === "ADMIN";
+    const isOwnerFilter =
+      req.user?.role === "INSTRUCTOR" &&
+      ownerId &&
+      ownerId === req.user._id.toString();
+    const includeCohorts = Boolean(req.user && (isAdmin || isOwnerFilter));
+
+    // Public and participant catalog requests never expose drafts or private courses.
+    if (!isAdmin && !isOwnerFilter) {
       query.status = "PUBLISHED";
+      query.isPublic = true;
     }
 
     // Get total count
     const total = await Course.countDocuments(query);
 
     // Get courses with pagination
-    const courses = await Course.find(query)
+    let courseQuery = Course.find(query)
       .populate("ownerId", "name email")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
+    if (includeCohorts) {
+      courseQuery = courseQuery.populate("cohortIds", "name status programId");
+    }
+
+    const courses = await courseQuery;
+
     // If user is authenticated and enrollment status is requested, check enrollment for each course
-    let coursesWithEnrollment = courses;
+    let coursesWithEnrollment = courses.map((course) =>
+      toFrontendCourse(course, { includeCohorts })
+    );
     if (req.user && includeEnrollmentStatus === "true") {
       const courseIds = courses.map((course) => course._id);
 
@@ -80,14 +216,14 @@ export const getAllCourses = async (req, res) => {
       coursesWithEnrollment = courses.map((course) => {
         const enrollment = enrollmentMap[course._id.toString()];
         return {
-          ...course.toObject(),
+          ...toFrontendCourse(course, { includeCohorts }),
           enrollmentStatus: enrollment
             ? {
                 isEnrolled: true,
                 enrollmentId: enrollment._id,
                 status: enrollment.status,
                 enrolledAt: enrollment.enrolledAt,
-                progress: enrollment.progress || 0,
+                progress: enrollment.progressPct || 0,
                 completedAt: enrollment.completedAt,
               }
             : {
@@ -108,6 +244,7 @@ export const getAllCourses = async (req, res) => {
       page,
       limit
     );
+    result.courses = result.data;
     return successResponse(res, result, "Courses retrieved successfully");
   } catch (error) {
     logger.error("Get all courses error:", error);
@@ -167,14 +304,14 @@ export const getCourseCatalog = async (req, res) => {
       coursesWithEnrollment = courses.map((course) => {
         const enrollment = enrollmentMap[course._id.toString()];
         return {
-          ...course.toObject(),
+          ...toFrontendCourse(course),
           enrollmentStatus: enrollment
             ? {
                 isEnrolled: true,
                 enrollmentId: enrollment._id,
                 status: enrollment.status,
                 enrolledAt: enrollment.enrolledAt,
-                progress: enrollment.progress || 0,
+                progress: enrollment.progressPct || 0,
                 completedAt: enrollment.completedAt,
               }
             : {
@@ -190,7 +327,7 @@ export const getCourseCatalog = async (req, res) => {
     } else {
       // For unauthenticated users, add default enrollment status
       coursesWithEnrollment = courses.map((course) => ({
-        ...course.toObject(),
+        ...toFrontendCourse(course),
         enrollmentStatus: {
           isEnrolled: false,
           enrollmentId: null,
@@ -234,7 +371,16 @@ export const createCourse = async (req, res) => {
       isPublic,
       enrollmentLimit,
       prerequisites,
+      cohortIds,
     } = req.body;
+
+    const Program = (await import("../../programs/models/Program.js")).default;
+    const program = await Program.findById(programId);
+    if (!program) {
+      return notFoundResponse(res, "Program");
+    }
+
+    const validatedCohorts = await loadValidatedCohorts(programId, cohortIds);
 
     const course = new Course({
       title,
@@ -248,6 +394,7 @@ export const createCourse = async (req, res) => {
       isPublic,
       enrollmentLimit,
       prerequisites,
+      cohortIds: validatedCohorts.cohortIds,
       ownerId: req.user._id,
     });
 
@@ -256,17 +403,17 @@ export const createCourse = async (req, res) => {
     const populatedCourse = await Course.findById(course._id).populate(
       "ownerId",
       "name email"
-    );
+    ).populate("cohortIds", "name status programId");
 
     return successResponse(
       res,
-      { course: populatedCourse },
+      toFrontendCourse(populatedCourse, { includeCohorts: true }),
       "Course created successfully",
       201
     );
   } catch (error) {
     logger.error("Create course error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -281,19 +428,29 @@ export const getCourseById = async (req, res) => {
       return notFoundResponse(res, "Course");
     }
 
-    // Check if user can access this course
-    // In development, allow access to all courses for easier testing
-    // In production, only allow access to published courses for non-admin users
+    const userId = req.user?._id?.toString();
+    const isOwner = userId && course.ownerId?._id?.toString() === userId;
+    const isAdmin = req.user?.role === "ADMIN";
+
     if (
-      course.status !== "PUBLISHED" &&
-      req.user?.role !== "ADMIN" &&
-      course.ownerId._id.toString() !== req.user?._id.toString() &&
-      process.env.NODE_ENV === "production"
+      (!course.isPublic || course.status !== "PUBLISHED") &&
+      !isAdmin &&
+      !isOwner
     ) {
       return forbiddenResponse(res, "Access denied");
     }
 
-    return successResponse(res, { course }, "Course retrieved successfully");
+    const canSeeCohorts = Boolean(isAdmin || isOwner);
+
+    if (canSeeCohorts) {
+      await course.populate("cohortIds", "name status programId");
+    }
+
+    return successResponse(
+      res,
+      { course: toFrontendCourse(course, { includeCohorts: canSeeCohorts }) },
+      "Course retrieved successfully"
+    );
   } catch (error) {
     logger.error("Get course by ID error:", error);
     return errorResponse(res, error);
@@ -318,20 +475,32 @@ export const updateCourse = async (req, res) => {
     }
 
     const updates = req.body;
+    const nextProgramId = updates.programId || course.programId.toString();
+    const nextCohortIds =
+      updates.cohortIds !== undefined ? updates.cohortIds : course.cohortIds;
+    const validatedCohorts = await loadValidatedCohorts(
+      nextProgramId,
+      nextCohortIds
+    );
     const updatedCourse = await Course.findByIdAndUpdate(
       req.params.id,
-      updates,
+      {
+        ...updates,
+        cohortIds: validatedCohorts.cohortIds,
+      },
       { new: true, runValidators: true }
-    ).populate("ownerId", "name email");
+    )
+      .populate("ownerId", "name email")
+      .populate("cohortIds", "name status programId");
 
     return successResponse(
       res,
-      { course: updatedCourse },
+      toFrontendCourse(updatedCourse, { includeCohorts: true }),
       "Course updated successfully"
     );
   } catch (error) {
     logger.error("Update course error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -361,6 +530,69 @@ export const deleteCourse = async (req, res) => {
   }
 };
 
+// POST /courses/:id/publish - Publish course
+export const publishCourse = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+
+    if (!course) {
+      return notFoundResponse(res, "Course");
+    }
+
+    if (
+      req.user.role !== "ADMIN" &&
+      course.ownerId.toString() !== req.user._id.toString()
+    ) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    course.status = "PUBLISHED";
+    await course.save();
+    await course.populate("ownerId", "name email");
+
+    return successResponse(
+      res,
+      toFrontendCourse(course),
+      "Course published successfully"
+    );
+  } catch (error) {
+    logger.error("Publish course error:", error);
+    return errorResponse(res, error);
+  }
+};
+
+// POST /courses/:id/unpublish - Unpublish course
+export const unpublishCourse = async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id);
+
+    if (!course) {
+      return notFoundResponse(res, "Course");
+    }
+
+    if (
+      req.user.role !== "ADMIN" &&
+      course.ownerId.toString() !== req.user._id.toString()
+    ) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    course.status = "DRAFT";
+    course.publishedAt = null;
+    await course.save();
+    await course.populate("ownerId", "name email");
+
+    return successResponse(
+      res,
+      toFrontendCourse(course),
+      "Course unpublished successfully"
+    );
+  } catch (error) {
+    logger.error("Unpublish course error:", error);
+    return errorResponse(res, error);
+  }
+};
+
 // GET /courses/:courseId/lessons/:lessonId - Get lesson details
 export const getLesson = async (req, res) => {
   try {
@@ -368,7 +600,7 @@ export const getLesson = async (req, res) => {
 
     const lesson = await Lesson.findById(lessonId)
       .populate("sectionId", "title order")
-      .populate("courseId", "title status");
+      .populate("courseId", "title status ownerId");
 
     if (!lesson) {
       return notFoundResponse(res, "Lesson");
@@ -378,7 +610,7 @@ export const getLesson = async (req, res) => {
     if (
       lesson.courseId.status !== "PUBLISHED" &&
       req.user?.role !== "ADMIN" &&
-      lesson.courseId.ownerId?.toString() !== req.user?._id.toString()
+      lesson.courseId.ownerId?.toString() !== req.user?._id?.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
     }
@@ -446,23 +678,84 @@ export const updateLesson = async (req, res) => {
   }
 };
 
+function handleLessonProgressParamError(res, error) {
+  if (error.code === "INVALID_ID") {
+    return res.status(400).json({
+      ok: false,
+      error: { code: "INVALID_ID", message: error.message },
+    });
+  }
+  if (error.code === "NOT_FOUND") {
+    return notFoundResponse(res, "Lesson");
+  }
+  if (error.code === "LESSON_COURSE_MISMATCH") {
+    return res.status(400).json({
+      ok: false,
+      error: { code: "LESSON_COURSE_MISMATCH", message: error.message },
+    });
+  }
+  return null;
+}
+
 // POST /courses/:courseId/lessons/:lessonId/complete - Mark lesson complete
 export const completeLesson = async (req, res) => {
   try {
     const { courseId, lessonId } = req.params;
 
-    // Check if user is enrolled in the course
-    const enrollment = await Enrollment.isUserEnrolled(req.user._id, courseId);
-    if (!enrollment && req.user.role !== "ADMIN") {
+    try {
+      assertObjectIds(courseId, lessonId);
+      await getLessonInCourse(lessonId, courseId);
+    } catch (e) {
+      const handled = handleLessonProgressParamError(res, e);
+      if (handled) return handled;
+      throw e;
+    }
+
+    const allowed = await canAccessLessonProgress(req.user, courseId);
+    if (!allowed) {
       return forbiddenResponse(
         res,
         "You must be enrolled in this course to complete lessons"
       );
     }
 
-    // In a real implementation, you would update lesson progress
-    // For now, we'll just return success
-    return successResponse(res, null, "Lesson marked as complete");
+    try {
+      await assertRequiredTasksSubmitted(req.user._id, lessonId);
+    } catch (e) {
+      if (e.code === "REQUIRED_TASKS_INCOMPLETE") {
+        return res.status(400).json({
+          ok: false,
+          error: {
+            code: e.code,
+            message: e.message,
+            details: e.details,
+          },
+        });
+      }
+      throw e;
+    }
+
+    const now = new Date();
+    const progress = await LessonProgress.findOneAndUpdate(
+      { userId: req.user._id, lessonId },
+      {
+        $set: {
+          courseId,
+          completed: true,
+          completedAt: now,
+          lastAccessedAt: now,
+        },
+      },
+      { new: true, upsert: true, runValidators: true }
+    );
+
+    await syncEnrollmentProgressFromLessons(req.user._id, courseId);
+
+    return successResponse(
+      res,
+      { progress },
+      "Lesson marked as complete"
+    );
   } catch (error) {
     logger.error("Complete lesson error:", error);
     return errorResponse(res, error);
@@ -474,13 +767,38 @@ export const getLessonProgress = async (req, res) => {
   try {
     const { courseId, lessonId } = req.params;
 
-    // In a real implementation, you would get lesson progress from a progress model
-    // For now, we'll return default progress
-    const progress = {
-      completed: false,
-      timeSpent: 0,
-      lastAccessed: null,
-    };
+    try {
+      assertObjectIds(courseId, lessonId);
+      await getLessonInCourse(lessonId, courseId);
+    } catch (e) {
+      const handled = handleLessonProgressParamError(res, e);
+      if (handled) return handled;
+      throw e;
+    }
+
+    const allowed = await canAccessLessonProgress(req.user, courseId);
+    if (!allowed) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    const doc = await LessonProgress.findOne({
+      userId: req.user._id,
+      lessonId,
+    });
+
+    const progress = doc
+      ? {
+          completed: doc.completed,
+          timeSpentSec: doc.timeSpentSec,
+          lastAccessedAt: doc.lastAccessedAt,
+          completedAt: doc.completedAt,
+        }
+      : {
+          completed: false,
+          timeSpentSec: 0,
+          lastAccessedAt: null,
+          completedAt: null,
+        };
 
     return successResponse(
       res,
@@ -493,15 +811,50 @@ export const getLessonProgress = async (req, res) => {
   }
 };
 
-// PATCH /courses/:courseId/lessons/:lessonId/progress - Update lesson progress
+// PATCH /courses/:courseId/lessons/:lessonId/progress - Update lesson progress (time only; use POST .../complete to finish)
 export const updateLessonProgress = async (req, res) => {
   try {
     const { courseId, lessonId } = req.params;
-    const { timeSpent, completed } = req.body;
+    const { additionalTimeSec = 0 } = req.body;
 
-    // In a real implementation, you would update lesson progress in a progress model
-    // For now, we'll just return success
-    return successResponse(res, null, "Lesson progress updated successfully");
+    try {
+      assertObjectIds(courseId, lessonId);
+      await getLessonInCourse(lessonId, courseId);
+    } catch (e) {
+      const handled = handleLessonProgressParamError(res, e);
+      if (handled) return handled;
+      throw e;
+    }
+
+    const allowed = await canAccessLessonProgress(req.user, courseId);
+    if (!allowed) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    const inc = Math.max(0, Number(additionalTimeSec) || 0);
+    const now = new Date();
+
+    const progress = await LessonProgress.findOneAndUpdate(
+      { userId: req.user._id, lessonId },
+      {
+        $set: { courseId, lastAccessedAt: now },
+        $inc: { timeSpentSec: inc },
+      },
+      { new: true, upsert: true, runValidators: true }
+    );
+
+    return successResponse(
+      res,
+      {
+        progress: {
+          completed: progress.completed,
+          timeSpentSec: progress.timeSpentSec,
+          lastAccessedAt: progress.lastAccessedAt,
+          completedAt: progress.completedAt,
+        },
+      },
+      "Lesson progress updated successfully"
+    );
   } catch (error) {
     logger.error("Update lesson progress error:", error);
     return errorResponse(res, error);
@@ -749,14 +1102,14 @@ export const getCourseSections = async (req, res) => {
       return notFoundResponse(res, "Course");
     }
 
-    // Check access permissions
-    // In development, allow access to all sections for easier testing
-    // In production, only allow access to published courses for non-admin users
+    const userId = req.user?._id?.toString();
+    const isOwner = userId && course.ownerId.toString() === userId;
+    const isAdmin = req.user?.role === "ADMIN";
+    const isPrivileged = isAdmin || isOwner;
+
     if (
-      course.status !== "PUBLISHED" &&
-      req.user?.role !== "ADMIN" &&
-      course.ownerId.toString() !== req.user?._id.toString() &&
-      process.env.NODE_ENV === "production"
+      (!course.isPublic || course.status !== "PUBLISHED") &&
+      !isPrivileged
     ) {
       return forbiddenResponse(res, "Access denied");
     }
@@ -770,9 +1123,31 @@ export const getCourseSections = async (req, res) => {
         options: { sort: { order: 1 } },
       });
 
+    const responseSections = isPrivileged
+      ? sections
+      : sections.map((section) => {
+          const sectionObject = section.toObject({ virtuals: true });
+          const publishedLessons = (sectionObject.lessons || []).filter(
+            (lesson) => lesson.isPublished
+          );
+          return {
+            id: sectionObject.id || sectionObject._id?.toString(),
+            title: sectionObject.title,
+            description: sectionObject.description,
+            order: sectionObject.order,
+            lessonCount: publishedLessons.length,
+            estimatedDuration: Math.ceil(
+              publishedLessons.reduce(
+                (total, lesson) => total + (lesson.durationSec || 0),
+                0
+              ) / 60
+            ),
+          };
+        });
+
     return successResponse(
       res,
-      { sections },
+      { sections: responseSections, data: { sections: responseSections } },
       "Sections retrieved successfully"
     );
   } catch (error) {
@@ -902,29 +1277,47 @@ export const getSectionLessons = async (req, res) => {
       return notFoundResponse(res, "Section not found in this course");
     }
 
-    // Check permissions - in development, allow access to all lessons for easier testing
-    // In production, only allow access to published lessons for non-admin users
-    const query = { sectionId };
+    const userId = req.user?._id?.toString();
+    const isOwner = userId && course.ownerId.toString() === userId;
+    const isAdmin = req.user?.role === "ADMIN";
+    const isPrivileged = isAdmin || isOwner;
+
     if (
-      req.user?.role !== "ADMIN" &&
-      course.ownerId.toString() !== req.user?._id.toString() &&
-      process.env.NODE_ENV === "production"
+      (!course.isPublic || course.status !== "PUBLISHED") &&
+      !isPrivileged
     ) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    const query = { sectionId };
+    if (!isPrivileged) {
       query.isPublished = true;
     }
 
-    // Get total count
-    const total = await Lesson.countDocuments(query);
-
-    // Get lessons with pagination
     const lessons = await Lesson.find(query)
       .populate("sectionId", "title order")
       .sort({ order: 1 })
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const result = createPaginationResult(lessons, total, page, limit);
-    return successResponse(res, result, "Lessons retrieved successfully");
+    const responseLessons = lessons.map((lesson) => {
+      const lessonObject = lesson.toObject({ virtuals: true });
+      if (isPrivileged) return lessonObject;
+      return {
+        id: lessonObject.id || lessonObject._id?.toString(),
+        title: lessonObject.title,
+        type: lessonObject.type,
+        durationSec: lessonObject.durationSec,
+        isFree: lessonObject.isFree,
+        order: lessonObject.order,
+      };
+    });
+
+    return successResponse(
+      res,
+      responseLessons,
+      "Lessons retrieved successfully"
+    );
   } catch (error) {
     logger.error("Get section lessons error:", error);
     return errorResponse(res, error);

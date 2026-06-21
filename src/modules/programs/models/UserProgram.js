@@ -18,7 +18,7 @@ const userProgramSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["ACTIVE", "COMPLETED", "WITHDRAWN", "SUSPENDED"],
+      enum: ["PENDING", "ACTIVE", "COMPLETED", "WITHDRAWN", "SUSPENDED"],
       default: "ACTIVE",
     },
     completedAt: {

@@ -3,7 +3,7 @@ import { Course } from '../../courses/models/Course.js';
 import { Cohort } from '../../cohorts/models/Cohort.js';
 import { Enrollment } from '../../enrollments/models/Enrollment.js';
 import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
-import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
+import { getPaginationParams } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
 
 // GET /announcements - Get announcements for current user
@@ -315,10 +315,42 @@ export const getAllAnnouncements = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const result = createPaginationResult(announcements, total, page, limit);
+    const totalPages = Math.ceil(total / limit) || 0;
+    const result = {
+      announcements,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
     return successResponse(res, result, 'All announcements retrieved successfully');
   } catch (error) {
     logger.error('Get all announcements error:', error);
+    return errorResponse(res, error);
+  }
+};
+
+// GET /announcements/admin/stats - Aggregate counts (admin only)
+export const getAdminAnnouncementStats = async (req, res) => {
+  try {
+    const [total, published, drafts, pinned] = await Promise.all([
+      Announcement.countDocuments({}),
+      Announcement.countDocuments({ status: 'PUBLISHED' }),
+      Announcement.countDocuments({ status: 'DRAFT' }),
+      Announcement.countDocuments({ isPinned: true }),
+    ]);
+
+    return successResponse(
+      res,
+      { total, published, drafts, pinned },
+      'Announcement stats retrieved successfully'
+    );
+  } catch (error) {
+    logger.error('Get admin announcement stats error:', error);
     return errorResponse(res, error);
   }
 };

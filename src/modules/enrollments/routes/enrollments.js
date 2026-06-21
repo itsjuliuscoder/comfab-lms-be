@@ -6,6 +6,7 @@ import { validateBody } from '../../../middleware/validation.js';
 import { asyncHandler } from '../../../middleware/error.js';
 import {
   getUserEnrollments,
+  getMyCourseEnrollment,
   enrollInCourse,
   updateEnrollment,
   withdrawFromCourse,
@@ -30,6 +31,7 @@ const updateEnrollmentSchema = z.object({
 // User Enrollment Routes
 router.get('/', requireAuth, asyncHandler(getUserEnrollments));
 router.post('/', requireAuth, validateBody(enrollInCourseSchema), asyncHandler(enrollInCourse));
+router.get('/me/courses/:courseId', requireAuth, asyncHandler(getMyCourseEnrollment));
 router.get('/courses/:courseId', requireAuth, asyncHandler(getCourseEnrollments));
 router.get('/:id', requireAuth, asyncHandler(getEnrollmentDetails));
 router.put('/:id', requireAuth, validateBody(updateEnrollmentSchema), asyncHandler(updateEnrollment));

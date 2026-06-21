@@ -1,17 +1,14 @@
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { User } from '../../users/models/User.js';
 import { generateTokens, verifyRefreshToken } from '../../../middleware/auth.js';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../../config/email.js';
 import { successResponse, errorResponse, unauthorizedResponse } from '../../../utils/response.js';
-import { config } from '../../../config/env.js';
 import { logger } from '../../../utils/logger.js';
 
 // POST /auth/register
 export const register = async (req, res) => {
   try {
-    const { name, email, password, role = 'PARTICIPANT', cohortId, roleInCohort = 'MEMBER' } = req.body;
+    const { name, email, password, cohortId, roleInCohort = 'MEMBER' } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findByEmail(email);
@@ -56,7 +53,7 @@ export const register = async (req, res) => {
       name,
       email,
       password,
-      role,
+      role: 'PARTICIPANT',
     });
 
     await user.save();
@@ -195,59 +192,6 @@ export const refresh = async (req, res) => {
   } catch (error) {
     logger.error('Token refresh error:', error);
     return unauthorizedResponse(res, 'Invalid refresh token');
-  }
-};
-
-// GET /auth/debug-token - Debug endpoint to test token generation
-export const debugToken = async (req, res) => {
-  try {
-    const { userId } = req.query;
-    
-    if (!userId) {
-      return res.status(400).json({
-        ok: false,
-        error: {
-          code: 'MISSING_USER_ID',
-          message: 'User ID is required',
-        },
-      });
-    }
-
-    // Check if user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        ok: false,
-        error: {
-          code: 'USER_NOT_FOUND',
-          message: 'User not found',
-        },
-      });
-    }
-
-    // Generate tokens
-    const tokens = generateTokens(user._id);
-    
-    // Test refresh token verification
-    try {
-      const decoded = verifyRefreshToken(tokens.refreshToken);
-      logger.info('Debug: Refresh token verification successful:', { userId: decoded.userId });
-    } catch (error) {
-      logger.error('Debug: Refresh token verification failed:', error);
-    }
-
-    return successResponse(res, {
-      tokens,
-      user: user.toPublicJSON(),
-      debug: {
-        jwtSecret: config.jwt.secret ? 'Set' : 'Not set',
-        jwtExpiresIn: config.jwt.expiresIn,
-        refreshExpiresIn: config.jwt.refreshExpiresIn,
-      }
-    }, 'Debug token generated successfully');
-  } catch (error) {
-    logger.error('Debug token error:', error);
-    return errorResponse(res, error);
   }
 };
 

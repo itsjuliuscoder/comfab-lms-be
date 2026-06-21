@@ -1,12 +1,13 @@
 import express from "express";
 import { z } from "zod";
-import { requireAuth } from "../../../middleware/auth.js";
-import { requireAdmin, requireInstructor } from "../../../middleware/rbac.js";
+import { optionalAuth, requireAuth } from "../../../middleware/auth.js";
+import { requireInstructor } from "../../../middleware/rbac.js";
 import { validateBody, validateQuery } from "../../../middleware/validation.js";
 import { asyncHandler } from "../../../middleware/error.js";
 import {
   getAllPrograms,
   getProgramById,
+  getMyProgramEnrollments,
   createProgram,
   updateProgram,
   deleteProgram,
@@ -70,7 +71,7 @@ const createProgramSchema = z.object({
     .optional(),
   location: z
     .object({
-      type: z.enum(["ONLINE", "ONSITE", "HYBRID"]).optional(),
+      type: z.enum(["ONLINE", "IN_PERSON", "HYBRID"]).optional(),
       address: z
         .string()
         .max(200, "Address cannot exceed 200 characters")
@@ -121,7 +122,7 @@ const updateProgramSchema = z.object({
       "Program code can only contain uppercase letters, numbers, hyphens, and underscores"
     )
     .optional(),
-  status: z.enum(["ACTIVE", "INACTIVE", "ARCHIVED"]).optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "CANCELLED"]).optional(),
   startDate: z.string().datetime("Invalid start date format").optional(),
   endDate: z.string().datetime("Invalid end date format").optional(),
   duration: z
@@ -161,7 +162,7 @@ const updateProgramSchema = z.object({
     .optional(),
   location: z
     .object({
-      type: z.enum(["ONLINE", "ONSITE", "HYBRID"]).optional(),
+      type: z.enum(["ONLINE", "IN_PERSON", "HYBRID"]).optional(),
       address: z
         .string()
         .max(200, "Address cannot exceed 200 characters")
@@ -195,6 +196,7 @@ const updateProgramSchema = z.object({
 // Public routes (no authentication required)
 router.get(
   "/",
+  optionalAuth,
   validateQuery(
     z.object({
       page: z.string().optional(),
@@ -208,7 +210,8 @@ router.get(
   asyncHandler(getAllPrograms)
 );
 
-router.get("/:id", asyncHandler(getProgramById));
+router.get("/my-enrollments", requireAuth, asyncHandler(getMyProgramEnrollments));
+router.get("/:id", optionalAuth, asyncHandler(getProgramById));
 
 // Protected routes (authentication required)
 router.post(
@@ -229,7 +232,7 @@ router.delete("/:id", requireAuth, asyncHandler(deleteProgram));
 // Program content routes
 router.get(
   "/:id/courses",
-  requireAuth,
+  optionalAuth,
   validateQuery(
     z.object({
       page: z.string().optional(),

@@ -32,7 +32,15 @@ const programSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["ACTIVE", "INACTIVE", "ARCHIVED"],
+      enum: [
+        "DRAFT",
+        "ACTIVE",
+        "PAUSED",
+        "COMPLETED",
+        "CANCELLED",
+        "INACTIVE",
+        "ARCHIVED",
+      ],
       default: "ACTIVE",
     },
     startDate: {
@@ -134,7 +142,7 @@ const programSchema = new mongoose.Schema(
     location: {
       type: {
         type: String,
-        enum: ["ONLINE", "ONSITE", "HYBRID"],
+        enum: ["ONLINE", "IN_PERSON", "HYBRID", "ONSITE"],
         default: "ONLINE",
       },
       address: {

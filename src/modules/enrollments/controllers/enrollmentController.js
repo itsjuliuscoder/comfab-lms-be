@@ -34,6 +34,26 @@ export const getUserEnrollments = async (req, res) => {
   }
 };
 
+// GET /enrollments/me/courses/:courseId - Get the current user's enrollment.
+export const getMyCourseEnrollment = async (req, res) => {
+  try {
+    const enrollment = await Enrollment.findOne({
+      userId: req.user._id,
+      courseId: req.params.courseId,
+      status: { $in: ['ACTIVE', 'COMPLETED'] },
+    }).populate('courseId', 'title summary thumbnailUrl difficulty estimatedDuration');
+
+    if (!enrollment) {
+      return notFoundResponse(res, 'Enrollment');
+    }
+
+    return successResponse(res, { enrollment }, 'Enrollment retrieved successfully');
+  } catch (error) {
+    logger.error('Get current course enrollment error:', error);
+    return errorResponse(res, error);
+  }
+};
+
 // GET /enrollments/courses/:courseId - Get enrollments for a specific course
 export const getCourseEnrollments = async (req, res) => {
   try {

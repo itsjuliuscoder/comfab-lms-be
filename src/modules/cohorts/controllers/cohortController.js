@@ -116,7 +116,7 @@ export const getCohortById = async (req, res) => {
     }
 
     // Check if user can access this cohort
-    if (req.user?.role !== "ADMIN") {
+    if (req.user?.role !== "ADMIN" && req.user?.role !== "INSTRUCTOR") {
       const membership = await UserCohort.isUserInCohort(
         req.user._id,
         cohort._id
@@ -225,7 +225,7 @@ export const getCohortMembers = async (req, res) => {
     }
 
     // Check if user can access this cohort
-    if (req.user?.role !== "ADMIN") {
+    if (req.user?.role !== "ADMIN" && req.user?.role !== "INSTRUCTOR") {
       const membership = await UserCohort.isUserInCohort(
         req.user._id,
         cohort._id

@@ -47,6 +47,12 @@ const courseSchema = new mongoose.Schema(
       ref: "Program",
       required: [true, "Program ID is required"],
     },
+    cohortIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Cohort",
+      },
+    ],
     status: {
       type: String,
       enum: ["DRAFT", "PUBLISHED", "ARCHIVED"],
@@ -131,6 +137,7 @@ courseSchema.index({ title: "text", summary: "text", description: "text" });
 courseSchema.index({ status: 1 });
 courseSchema.index({ ownerId: 1 });
 courseSchema.index({ programId: 1 });
+courseSchema.index({ cohortIds: 1 });
 courseSchema.index({ difficulty: 1 });
 courseSchema.index({ featured: 1 });
 courseSchema.index({ isPublic: 1 });

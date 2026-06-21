@@ -19,7 +19,17 @@ const lessonSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['VIDEO', 'TEXT', 'FILE', 'LINK', 'QUIZ'],
+    enum: [
+      'VIDEO',
+      'TEXT',
+      'INTERACTIVE',
+      'QUIZ',
+      'ASSIGNMENT',
+      'FILE',
+      'LINK',
+      'AUDIO',
+      'RESOURCE',
+    ],
     required: true,
   },
   content: {
@@ -50,10 +60,10 @@ const lessonSchema = new mongoose.Schema({
     trim: true,
     validate: {
       validator: function(v) {
-        if (this.type === 'LINK' && !v) return false;
+        if ((this.type === 'LINK' || this.type === 'RESOURCE') && !v) return false;
         return true;
       },
-      message: 'External URL is required for LINK type lessons',
+      message: 'External URL is required for LINK and RESOURCE type lessons',
     },
   },
   order: {

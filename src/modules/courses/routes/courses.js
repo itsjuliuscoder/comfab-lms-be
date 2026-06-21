@@ -1,6 +1,6 @@
 import express from "express";
 import { z } from "zod";
-import { requireAuth } from "../../../middleware/auth.js";
+import { optionalAuth, requireAuth } from "../../../middleware/auth.js";
 import { requireInstructor, requireRole } from "../../../middleware/rbac.js";
 import {
   validateBody,
@@ -13,6 +13,8 @@ import {
   getCourseById,
   updateCourse,
   deleteCourse,
+  publishCourse,
+  unpublishCourse,
   createSection,
   getCourseSections,
   updateSection,
@@ -69,6 +71,7 @@ const createCourseSchema = z.object({
     .min(1, "Enrollment limit must be at least 1")
     .optional(),
   prerequisites: z.array(z.string()).optional(),
+  cohortIds: z.array(z.string().min(1)).optional(),
 });
 
 const updateCourseSchema = z.object({
@@ -104,6 +107,7 @@ const updateCourseSchema = z.object({
     .min(1, "Enrollment limit must be at least 1")
     .optional(),
   prerequisites: z.array(z.string()).optional(),
+  cohortIds: z.array(z.string().min(1)).optional(),
   status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
   featured: z.boolean().optional(),
 });
@@ -130,8 +134,10 @@ const updateLessonSchema = z.object({
 });
 
 const updateProgressSchema = z.object({
-  timeSpent: z.number().min(0, "Time spent cannot be negative").optional(),
-  completed: z.boolean().optional(),
+  additionalTimeSec: z
+    .number()
+    .min(0, "additionalTimeSec cannot be negative")
+    .optional(),
 });
 
 const createNoteSchema = z.object({
@@ -210,7 +216,17 @@ const createLessonSchema = z.object({
     .string()
     .min(3, "Title must be at least 3 characters")
     .max(200, "Title cannot exceed 200 characters"),
-  type: z.enum(["TEXT", "VIDEO", "AUDIO", "QUIZ", "ASSIGNMENT", "RESOURCE"]),
+  type: z.enum([
+    "TEXT",
+    "VIDEO",
+    "INTERACTIVE",
+    "QUIZ",
+    "ASSIGNMENT",
+    "AUDIO",
+    "RESOURCE",
+    "FILE",
+    "LINK",
+  ]),
   content: z
     .string()
     .max(10000, "Content cannot exceed 10000 characters")
@@ -228,7 +244,7 @@ const createLessonSchema = z.object({
 });
 
 // Course Routes
-router.get("/", asyncHandler(getAllCourses));
+router.get("/", optionalAuth, asyncHandler(getAllCourses));
 router.post(
   "/",
   requireAuth,
@@ -236,7 +252,7 @@ router.post(
   validateBody(createCourseSchema),
   asyncHandler(createCourse)
 );
-router.get("/:id", asyncHandler(getCourseById));
+router.get("/:id", optionalAuth, asyncHandler(getCourseById));
 router.put(
   "/:id",
   requireAuth,
@@ -250,9 +266,11 @@ router.delete(
   requireInstructor,
   asyncHandler(deleteCourse)
 );
+router.post("/:id/publish", requireAuth, requireInstructor, asyncHandler(publishCourse));
+router.post("/:id/unpublish", requireAuth, requireInstructor, asyncHandler(unpublishCourse));
 
 // Section Routes
-router.get("/:id/sections", asyncHandler(getCourseSections));
+router.get("/:id/sections", optionalAuth, asyncHandler(getCourseSections));
 router.post(
   "/:id/sections",
   requireAuth,
@@ -275,7 +293,7 @@ router.delete(
 );
 
 // Lesson Routes
-router.get("/:id/sections/:sectionId/lessons", asyncHandler(getSectionLessons));
+router.get("/:id/sections/:sectionId/lessons", optionalAuth, asyncHandler(getSectionLessons));
 router.post(
   "/:id/sections/:sectionId/lessons",
   requireAuth,
