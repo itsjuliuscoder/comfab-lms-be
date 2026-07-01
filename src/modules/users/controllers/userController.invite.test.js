@@ -3,39 +3,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocked = vi.hoisted(() => {
   const User = vi.fn();
   User.findByEmail = vi.fn();
-  User.findById = vi.fn();
 
   return {
     User,
-    sendWelcomeEmail: vi.fn(),
-    sendPasswordResetEmail: vi.fn(),
-    generateTokens: vi.fn(() => ({
-      accessToken: "access-token",
-      refreshToken: "refresh-token",
-    })),
-    verifyRefreshToken: vi.fn(),
+    sendInvitationEmail: vi.fn(),
   };
 });
 
-vi.mock("../../users/models/User.js", () => ({
+vi.mock("../models/User.js", () => ({
   User: mocked.User,
 }));
 
 vi.mock("../../../config/email.js", () => ({
-  sendWelcomeEmail: mocked.sendWelcomeEmail,
-  sendPasswordResetEmail: mocked.sendPasswordResetEmail,
+  sendInvitationEmail: mocked.sendInvitationEmail,
 }));
 
-vi.mock("../../../utils/emailVerification.js", () => ({
-  sendUserVerificationEmail: vi.fn(),
-}));
-
-vi.mock("../../../middleware/auth.js", () => ({
-  generateTokens: mocked.generateTokens,
-  verifyRefreshToken: mocked.verifyRefreshToken,
-}));
-
-const { register } = await import("./authController.js");
+const { inviteUser } = await import("./userController.js");
 
 const createRes = () => {
   const res = {};
@@ -44,51 +27,63 @@ const createRes = () => {
   return res;
 };
 
-describe("authController.register", () => {
+describe("userController.inviteUser", () => {
   beforeEach(() => {
     mocked.User.mockReset();
     mocked.User.findByEmail.mockReset();
-    mocked.sendWelcomeEmail.mockReset();
-    mocked.generateTokens.mockClear();
+    mocked.sendInvitationEmail.mockReset();
   });
 
-  it("forces public registration to create participants", async () => {
+  it("creates an invited user with a plus-alias email and no password", async () => {
     mocked.User.findByEmail.mockResolvedValue(null);
     mocked.User.mockImplementation(function User(data) {
       Object.assign(this, data);
-      this._id = "user-1";
+      this._id = "invited-user-1";
       this.save = vi.fn().mockResolvedValue(this);
       this.toPublicJSON = vi.fn(() => ({
-        id: "user-1",
+        id: this._id,
         name: this.name,
         email: this.email,
         role: this.role,
+        status: this.status,
       }));
     });
 
     const req = {
       body: {
-        name: "Test User",
-        email: "test@example.com",
-        password: "password123",
-        role: "ADMIN",
+        name: "Codex Admin Test User",
+        email: "codex.admin.test+123@example.com",
+        role: "PARTICIPANT",
+      },
+      user: {
+        _id: "admin-user-1",
+        name: "Codex Admin",
+        email: "codex.admin@example.com",
       },
     };
     const res = createRes();
 
-    await register(req, res);
+    await inviteUser(req, res);
 
     expect(mocked.User).toHaveBeenCalledWith(
       expect.objectContaining({
+        name: "Codex Admin Test User",
+        email: "codex.admin.test+123@example.com",
         role: "PARTICIPANT",
+        status: "ACTIVE",
+        invitedBy: "admin-user-1",
       })
     );
+    expect(mocked.User.mock.instances[0].password).toBeUndefined();
+    expect(mocked.sendInvitationEmail).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         ok: true,
         data: expect.objectContaining({
-          user: expect.objectContaining({ role: "PARTICIPANT" }),
+          user: expect.objectContaining({
+            email: "codex.admin.test+123@example.com",
+          }),
         }),
       })
     );

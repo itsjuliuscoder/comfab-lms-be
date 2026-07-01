@@ -111,7 +111,7 @@ const bulkInviteSchema = z.object({
   })).min(1, 'At least one user is required').max(100, 'Maximum 100 users can be invited at once'),
   cohortId: z.string().min(1, 'Cohort ID must be provided if specified').optional(),
   roleInCohort: z.enum(['LEADER', 'MEMBER', 'MENTOR']).default('MEMBER').optional(),
-  sendWelcomeEmail: z.boolean().default(true),
+  sendInvitationEmail: z.boolean().default(true),
 });
 
 // User Profile Routes (authenticated users)

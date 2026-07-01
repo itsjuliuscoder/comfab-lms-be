@@ -4,6 +4,11 @@ import dotenv from 'dotenv';
 // Load .env file if it exists, but don't fail if it doesn't
 dotenv.config();
 
+// Prefer Resend when an API key is configured but no provider was explicitly set
+if (!process.env.EMAIL_PROVIDER && process.env.RESEND_API_KEY) {
+  process.env.EMAIL_PROVIDER = 'resend';
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).default('9092'),

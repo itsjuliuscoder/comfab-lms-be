@@ -3,6 +3,7 @@ import { Lesson } from "../models/Lesson.js";
 import { Course } from "../models/Course.js";
 import { Enrollment } from "../../enrollments/models/Enrollment.js";
 import { LessonProgress } from "../models/LessonProgress.js";
+import { notifyEnrollmentCompletedIfNeeded } from "../../enrollments/services/enrollmentNotificationService.js";
 
 export function assertObjectIds(...ids) {
   for (const id of ids) {
@@ -71,7 +72,9 @@ export async function syncEnrollmentProgressFromLessons(userId, courseId) {
     completed: true,
   });
   const pct = Math.min(100, Math.round((completed / total) * 100));
+  const previousStatus = enrollment.status;
   enrollment.progressPct = pct;
   enrollment.lastAccessedAt = new Date();
   await enrollment.save();
+  await notifyEnrollmentCompletedIfNeeded(previousStatus, enrollment);
 }

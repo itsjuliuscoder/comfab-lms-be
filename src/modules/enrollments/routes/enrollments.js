@@ -28,6 +28,11 @@ const updateEnrollmentSchema = z.object({
   progressPct: z.number().min(0, 'Progress percentage cannot be negative').max(100, 'Progress percentage cannot exceed 100').optional(),
 });
 
+// Admin Routes. Keep these before /:id so static admin paths are not captured
+// as enrollment ids.
+router.get('/admin/all', requireAuth, requireAdmin, asyncHandler(getAllEnrollments));
+router.get('/admin/courses/:courseId/stats', requireAuth, requireAdmin, asyncHandler(getCourseEnrollmentStats));
+
 // User Enrollment Routes
 router.get('/', requireAuth, asyncHandler(getUserEnrollments));
 router.post('/', requireAuth, validateBody(enrollInCourseSchema), asyncHandler(enrollInCourse));
@@ -36,9 +41,5 @@ router.get('/courses/:courseId', requireAuth, asyncHandler(getCourseEnrollments)
 router.get('/:id', requireAuth, asyncHandler(getEnrollmentDetails));
 router.put('/:id', requireAuth, validateBody(updateEnrollmentSchema), asyncHandler(updateEnrollment));
 router.delete('/:id', requireAuth, asyncHandler(withdrawFromCourse));
-
-// Admin Routes
-router.get('/admin/all', requireAuth, requireAdmin, asyncHandler(getAllEnrollments));
-router.get('/admin/courses/:courseId/stats', requireAuth, requireAdmin, asyncHandler(getCourseEnrollmentStats));
 
 export default router;

@@ -127,6 +127,66 @@ export class EmailService {
     });
   }
 
+  async sendVerificationEmail(user, verificationToken) {
+    const emailOptions = this.provider === 'nodemailer'
+      ? createNodemailerTemplates.verificationEmail(user, verificationToken)
+      : createResendTemplates?.verificationEmail(user, verificationToken);
+
+    if (!emailOptions) {
+      throw new Error('Email templates not available for current provider');
+    }
+
+    return await this.sendEmail({
+      to: user.email,
+      ...emailOptions,
+    });
+  }
+
+  async sendPasswordChangedEmail(user) {
+    const emailOptions = this.provider === 'nodemailer'
+      ? createNodemailerTemplates.passwordChangedEmail(user)
+      : createResendTemplates?.passwordChangedEmail(user);
+
+    if (!emailOptions) {
+      throw new Error('Email templates not available for current provider');
+    }
+
+    return await this.sendEmail({
+      to: user.email,
+      ...emailOptions,
+    });
+  }
+
+  async sendCourseCompletionEmail(user, course, options = {}) {
+    const emailOptions = this.provider === 'nodemailer'
+      ? createNodemailerTemplates.courseCompletionEmail(user, course, options)
+      : createResendTemplates?.courseCompletionEmail(user, course, options);
+
+    if (!emailOptions) {
+      throw new Error('Email templates not available for current provider');
+    }
+
+    return await this.sendEmail({
+      to: user.email,
+      ...emailOptions,
+    });
+  }
+
+  async sendAnnouncementEmail(user, announcement, author) {
+    const emailOptions = this.provider === 'nodemailer'
+      ? createNodemailerTemplates.announcementEmail(user, announcement, author)
+      : createResendTemplates?.announcementEmail(user, announcement, author);
+
+    if (!emailOptions) {
+      throw new Error('Email templates not available for current provider');
+    }
+
+    return await this.sendEmail({
+      to: user.email,
+      ...emailOptions,
+    });
+  }
+
   // Send custom email
   async sendCustomEmail(to, subject, html, text, attachments = []) {
     return await this.sendEmail({
@@ -201,6 +261,10 @@ export const sendWelcomeEmail = (user) => emailService.sendWelcomeEmail(user);
 export const sendPasswordResetEmail = (user, resetToken) => emailService.sendPasswordResetEmail(user, resetToken);
 export const sendInvitationEmail = (user, inviteToken, invitedBy) => emailService.sendInvitationEmail(user, inviteToken, invitedBy);
 export const sendEnrollmentEmail = (user, course) => emailService.sendEnrollmentEmail(user, course);
+export const sendVerificationEmail = (user, verificationToken) => emailService.sendVerificationEmail(user, verificationToken);
+export const sendPasswordChangedEmail = (user) => emailService.sendPasswordChangedEmail(user);
+export const sendCourseCompletionEmail = (user, course, options) => emailService.sendCourseCompletionEmail(user, course, options);
+export const sendAnnouncementEmail = (user, announcement, author) => emailService.sendAnnouncementEmail(user, announcement, author);
 export const sendCustomEmail = (to, subject, html, text, attachments) => emailService.sendCustomEmail(to, subject, html, text, attachments);
 export const testEmailService = (testEmail) => emailService.testEmailService(testEmail);
 export const getCurrentProvider = () => emailService.getCurrentProvider();

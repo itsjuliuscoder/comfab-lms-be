@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { User } from '../../users/models/User.js';
 import { generateTokens, verifyRefreshToken } from '../../../middleware/auth.js';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../../config/email.js';
+import { sendUserVerificationEmail } from '../../../utils/emailVerification.js';
 import { successResponse, errorResponse, unauthorizedResponse } from '../../../utils/response.js';
 import { logger } from '../../../utils/logger.js';
 
@@ -77,11 +78,17 @@ export const register = async (req, res) => {
     // Generate tokens
     const { accessToken, refreshToken } = generateTokens(user._id);
 
-    // Send welcome email
+    // Send welcome and verification emails
     try {
       await sendWelcomeEmail(user);
     } catch (emailError) {
       logger.error('Failed to send welcome email:', emailError);
+    }
+
+    try {
+      await sendUserVerificationEmail(user);
+    } catch (emailError) {
+      logger.error('Failed to send verification email:', emailError);
     }
 
     // Return user data without password
@@ -268,8 +275,36 @@ export const verifyEmail = async (req, res) => {
   try {
     const { token } = req.query;
 
-    // In a real implementation, you would verify the email token
-    // For now, we'll just return success
+    if (!token) {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'MISSING_TOKEN',
+          message: 'Verification token is required',
+        },
+      });
+    }
+
+    const user = await User.findOne({
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'INVALID_VERIFICATION_TOKEN',
+          message: 'Invalid or expired verification token',
+        },
+      });
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationToken = null;
+    user.emailVerificationExpires = null;
+    await user.save();
+
     return successResponse(res, null, 'Email verified successfully');
   } catch (error) {
     logger.error('Email verification error:', error);
@@ -303,8 +338,13 @@ export const resendVerification = async (req, res) => {
       });
     }
 
-    // In a real implementation, you would send verification email
-    // For now, we'll just return success
+    try {
+      await sendUserVerificationEmail(user);
+    } catch (emailError) {
+      logger.error('Failed to send verification email:', emailError);
+      return errorResponse(res, new Error('Failed to send verification email'));
+    }
+
     return successResponse(res, null, 'Verification email sent successfully');
   } catch (error) {
     logger.error('Resend verification error:', error);

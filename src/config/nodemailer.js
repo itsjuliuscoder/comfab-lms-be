@@ -275,6 +275,134 @@ export const createNodemailerTemplates = {
       The ${config.app.name} Team
     `,
   }),
+
+  verificationEmail: (user, verificationToken) => ({
+    subject: `Verify your email - ${config.app.name}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Verify your email address</h2>
+        <p>Hello ${user.name},</p>
+        <p>Please confirm your email address to complete your ${config.app.name} account setup.</p>
+        <p>
+          <a href="${config.app.clientUrl}/verify-email?token=${verificationToken}" 
+             style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+            Verify Email
+          </a>
+        </p>
+        <p>If you didn't create an account, you can ignore this email.</p>
+        <p>This link will expire in 24 hours.</p>
+        <p>Best regards,<br>The ${config.app.name} Team</p>
+      </div>
+    `,
+    text: `
+      Verify your email - ${config.app.name}
+      
+      Hello ${user.name},
+      
+      Please confirm your email address to complete your ${config.app.name} account setup.
+      
+      Click the link below to verify your email:
+      ${config.app.clientUrl}/verify-email?token=${verificationToken}
+      
+      If you didn't create an account, you can ignore this email.
+      This link will expire in 24 hours.
+      
+      Best regards,
+      The ${config.app.name} Team
+    `,
+  }),
+
+  passwordChangedEmail: (user) => ({
+    subject: `Your password was changed - ${config.app.name}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Password changed</h2>
+        <p>Hello ${user.name},</p>
+        <p>Your ${config.app.name} account password was changed successfully.</p>
+        <p>If you did not make this change, please contact support immediately.</p>
+        <p>Best regards,<br>The ${config.app.name} Team</p>
+      </div>
+    `,
+    text: `
+      Your password was changed - ${config.app.name}
+      
+      Hello ${user.name},
+      
+      Your ${config.app.name} account password was changed successfully.
+      
+      If you did not make this change, please contact support immediately.
+      
+      Best regards,
+      The ${config.app.name} Team
+    `,
+  }),
+
+  courseCompletionEmail: (user, course, { certificateIssued = false } = {}) => ({
+    subject: `Congratulations! You completed ${course.title} - ${config.app.name}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Course completed!</h2>
+        <p>Hello ${user.name},</p>
+        <p>Congratulations on completing <strong>${course.title}</strong>!</p>
+        ${certificateIssued ? '<p>Your certificate has been issued and is available in your account.</p>' : ''}
+        <p>
+          <a href="${config.app.clientUrl}/courses/${course._id}" 
+             style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+            View Course
+          </a>
+        </p>
+        <p>Best regards,<br>The ${config.app.name} Team</p>
+      </div>
+    `,
+    text: `
+      Congratulations! You completed ${course.title} - ${config.app.name}
+      
+      Hello ${user.name},
+      
+      Congratulations on completing ${course.title}!
+      ${certificateIssued ? 'Your certificate has been issued and is available in your account.' : ''}
+      
+      View course: ${config.app.clientUrl}/courses/${course._id}
+      
+      Best regards,
+      The ${config.app.name} Team
+    `,
+  }),
+
+  announcementEmail: (user, announcement, author) => ({
+    subject: `${announcement.title} - ${config.app.name}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">${announcement.title}</h2>
+        <p>Hello ${user.name},</p>
+        <p>A new announcement has been posted${author?.name ? ` by <strong>${author.name}</strong>` : ''}:</p>
+        <div style="background-color: #f5f5f5; padding: 16px; border-radius: 4px; margin: 16px 0;">
+          ${announcement.content}
+        </div>
+        <p>
+          <a href="${config.app.clientUrl}/announcements" 
+             style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+            View Announcements
+          </a>
+        </p>
+        <p>Best regards,<br>The ${config.app.name} Team</p>
+      </div>
+    `,
+    text: `
+      ${announcement.title} - ${config.app.name}
+      
+      Hello ${user.name},
+      
+      A new announcement has been posted${author?.name ? ` by ${author.name}` : ''}:
+      
+      ${announcement.content}
+      
+      View announcements: ${config.app.clientUrl}/announcements
+      
+      Best regards,
+      The ${config.app.name} Team
+    `,
+  }),
 };
 
 export default {

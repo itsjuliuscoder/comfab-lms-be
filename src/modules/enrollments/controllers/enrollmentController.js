@@ -2,6 +2,7 @@ import { Enrollment } from '../models/Enrollment.js';
 import { Course } from '../../courses/models/Course.js';
 import { User } from '../../users/models/User.js';
 import { sendEnrollmentEmail } from '../../../config/email.js';
+import { notifyEnrollmentCompletedIfNeeded } from '../services/enrollmentNotificationService.js';
 import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
 import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
@@ -207,16 +208,17 @@ export const updateEnrollment = async (req, res) => {
       return forbiddenResponse(res, 'Access denied');
     }
 
-    // Update enrollment
-    const updates = {};
-    if (status) updates.status = status;
-    if (progressPct !== undefined) updates.progressPct = progressPct;
+    const previousStatus = enrollment.status;
 
-    const updatedEnrollment = await Enrollment.findByIdAndUpdate(
-      id,
-      updates,
-      { new: true, runValidators: true }
-    ).populate('courseId', 'title summary thumbnailUrl difficulty estimatedDuration');
+    if (status) enrollment.status = status;
+    if (progressPct !== undefined) enrollment.progressPct = progressPct;
+
+    await enrollment.save();
+
+    const updatedEnrollment = await Enrollment.findById(id)
+      .populate('courseId', 'title summary thumbnailUrl difficulty estimatedDuration');
+
+    await notifyEnrollmentCompletedIfNeeded(previousStatus, enrollment);
 
     return successResponse(res, { enrollment: updatedEnrollment }, 'Enrollment updated successfully');
   } catch (error) {

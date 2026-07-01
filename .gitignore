@@ -35,6 +35,12 @@ jspm_packages/
 # Optional eslint cache
 .eslintcache
 
+# Vitest cache
+.vitest-cache/
+
+# macOS metadata
+.DS_Store
+
 # Output of 'npm pack'
 *.tgz
 

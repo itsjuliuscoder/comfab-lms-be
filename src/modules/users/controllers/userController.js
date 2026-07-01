@@ -4,6 +4,16 @@ import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } f
 import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
 
+function parseSendInvitationEmailFlag(value, defaultValue = true) {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  return String(value).toLowerCase() !== 'false';
+}
+
 // GET /users/profile - Get current user profile
 export const getProfile = async (req, res) => {
   try {
@@ -104,6 +114,13 @@ export const changePassword = async (req, res) => {
     user.password = newPassword;
     await user.save();
 
+    try {
+      const { sendPasswordChangedEmail } = await import('../../../config/email.js');
+      await sendPasswordChangedEmail(user);
+    } catch (emailError) {
+      logger.error('Failed to send password changed email:', emailError);
+    }
+
     return successResponse(res, null, 'Password changed successfully');
   } catch (error) {
     logger.error('Change password error:', error);
@@ -114,13 +131,12 @@ export const changePassword = async (req, res) => {
 // GET /users/preferences - Get user preferences
 export const getPreferences = async (req, res) => {
   try {
-    // In a real implementation, you might have a separate preferences model
-    // For now, we'll return default preferences
+    const user = await User.findById(req.user._id).select('preferences');
     const preferences = {
-      emailNotifications: true,
-      pushNotifications: false,
-      language: 'en',
-      timezone: 'UTC',
+      emailNotifications: user?.preferences?.emailNotifications ?? true,
+      pushNotifications: user?.preferences?.pushNotifications ?? false,
+      language: user?.preferences?.language ?? 'en',
+      timezone: user?.preferences?.timezone ?? 'UTC',
     };
 
     return successResponse(res, { preferences }, 'Preferences retrieved successfully');
@@ -135,16 +151,20 @@ export const updatePreferences = async (req, res) => {
   try {
     const { emailNotifications, pushNotifications, language, timezone } = req.body;
 
-    // In a real implementation, you would save these to a preferences model
-    // For now, we'll just return success
-    const preferences = {
-      emailNotifications: emailNotifications ?? true,
-      pushNotifications: pushNotifications ?? false,
-      language: language ?? 'en',
-      timezone: timezone ?? 'UTC',
-    };
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return notFoundResponse(res, 'User');
+    }
 
-    return successResponse(res, { preferences }, 'Preferences updated successfully');
+    user.preferences = {
+      emailNotifications: emailNotifications ?? user.preferences?.emailNotifications ?? true,
+      pushNotifications: pushNotifications ?? user.preferences?.pushNotifications ?? false,
+      language: language ?? user.preferences?.language ?? 'en',
+      timezone: timezone ?? user.preferences?.timezone ?? 'UTC',
+    };
+    await user.save();
+
+    return successResponse(res, { preferences: user.preferences }, 'Preferences updated successfully');
   } catch (error) {
     logger.error('Update preferences error:', error);
     return errorResponse(res, error);
@@ -455,7 +475,7 @@ export const inviteUser = async (req, res) => {
 // POST /users/bulk-invite - Bulk invite users (admin)
 export const bulkInviteUsers = async (req, res) => {
   try {
-    const { users, cohortId, roleInCohort = 'MEMBER', sendWelcomeEmail = true } = req.body;
+    const { users, cohortId, roleInCohort = 'MEMBER', sendInvitationEmail: shouldSendInvitationEmail = true } = req.body;
 
     // Validate cohort if provided
     let cohort = null;
@@ -532,7 +552,7 @@ export const bulkInviteUsers = async (req, res) => {
         await user.save();
 
         // Send invite email
-        if (sendWelcomeEmail) {
+        if (shouldSendInvitationEmail) {
           try {
             const { sendInvitationEmail } = await import('../../../config/email.js');
             await sendInvitationEmail(user, inviteToken, req.user);
@@ -588,7 +608,9 @@ export const bulkInviteUsers = async (req, res) => {
 // POST /users/bulk-invite-excel - Bulk invite users from Excel file (admin)
 export const bulkInviteUsersFromExcel = async (req, res) => {
   try {
-    const { cohortId, roleInCohort = 'MEMBER', sendWelcomeEmail = true } = req.body;
+    const shouldSendInvitationEmail = parseSendInvitationEmailFlag(
+      req.body.sendInvitationEmail ?? req.body.sendWelcomeEmail
+    );
     
     // Check if file was uploaded
     if (!req.file) {
@@ -735,7 +757,7 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
         await user.save();
 
         // Send invite email
-        if (sendWelcomeEmail) {
+        if (shouldSendInvitationEmail) {
           try {
             const { sendInvitationEmail } = await import('../../../config/email.js');
             await sendInvitationEmail(user, inviteToken, req.user);

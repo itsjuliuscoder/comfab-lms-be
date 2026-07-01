@@ -5,6 +5,7 @@ import { Enrollment } from '../../enrollments/models/Enrollment.js';
 import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
 import { getPaginationParams } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
+import { sendAnnouncementEmails } from '../services/announcementEmailService.js';
 
 // GET /announcements - Get announcements for current user
 export const getAnnouncements = async (req, res) => {
@@ -121,7 +122,8 @@ export const createAnnouncement = async (req, res) => {
       expiresAt,
       isPinned,
       allowComments,
-      tags
+      tags,
+      status,
     } = req.body;
 
     // Validate target audience based on visibility
@@ -163,6 +165,7 @@ export const createAnnouncement = async (req, res) => {
       allowComments: allowComments !== false,
       tags: tags || [],
       authorId: req.user._id,
+      status: status || 'DRAFT',
     });
 
     await announcement.save();
@@ -173,6 +176,14 @@ export const createAnnouncement = async (req, res) => {
       { path: 'targetAudience.courseId', select: 'title' },
       { path: 'targetAudience.cohortId', select: 'name' }
     ]);
+
+    if (announcement.status === 'PUBLISHED') {
+      try {
+        await sendAnnouncementEmails(announcement, req.user);
+      } catch (emailError) {
+        logger.error('Failed to send announcement emails:', emailError);
+      }
+    }
 
     return successResponse(res, announcement, 'Announcement created successfully', 201);
   } catch (error) {
@@ -196,6 +207,8 @@ export const updateAnnouncement = async (req, res) => {
     if (announcement.authorId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
       return forbiddenResponse(res, 'You can only update your own announcements');
     }
+
+    const previousStatus = announcement.status;
 
     // Validate target audience if being updated
     if (updateData.targetAudience?.courseId) {
@@ -229,6 +242,17 @@ export const updateAnnouncement = async (req, res) => {
       { path: 'targetAudience.courseId', select: 'title' },
       { path: 'targetAudience.cohortId', select: 'name' }
     ]);
+
+    if (
+      updatedAnnouncement.status === 'PUBLISHED' &&
+      previousStatus !== 'PUBLISHED'
+    ) {
+      try {
+        await sendAnnouncementEmails(updatedAnnouncement, req.user);
+      } catch (emailError) {
+        logger.error('Failed to send announcement emails:', emailError);
+      }
+    }
 
     return successResponse(res, updatedAnnouncement, 'Announcement updated successfully');
   } catch (error) {

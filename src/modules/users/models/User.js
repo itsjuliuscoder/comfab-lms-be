@@ -14,7 +14,7 @@ const userSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email'],
+    match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please enter a valid email'],
   },
   password: {
     type: String,
@@ -55,6 +55,14 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  emailVerificationToken: {
+    type: String,
+    default: null,
+  },
+  emailVerificationExpires: {
+    type: Date,
+    default: null,
+  },
   inviteToken: {
     type: String,
     default: null,
@@ -78,6 +86,24 @@ const userSchema = new mongoose.Schema({
       type: String,
       enum: ['LEADER', 'MEMBER', 'MENTOR'],
       default: 'MEMBER',
+    },
+  },
+  preferences: {
+    emailNotifications: {
+      type: Boolean,
+      default: true,
+    },
+    pushNotifications: {
+      type: Boolean,
+      default: false,
+    },
+    language: {
+      type: String,
+      default: 'en',
+    },
+    timezone: {
+      type: String,
+      default: 'UTC',
     },
   },
 }, {
@@ -126,6 +152,10 @@ userSchema.methods.toPublicJSON = function() {
   delete userObject.password;
   delete userObject.passwordResetToken;
   delete userObject.passwordResetExpires;
+  delete userObject.emailVerificationToken;
+  delete userObject.emailVerificationExpires;
+  delete userObject.inviteToken;
+  delete userObject.inviteTokenExpires;
   return userObject;
 };
 
