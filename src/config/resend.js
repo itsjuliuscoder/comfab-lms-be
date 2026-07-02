@@ -317,7 +317,16 @@ export const sendEmailWithResend = async ({ to, subject, html, text }) => {
   });
 
   if (error) {
-    logger.error('Failed to send email via Resend:', error);
+    logger.error(
+      {
+        resendError: error,
+        message: error.message,
+        statusCode: error.statusCode,
+        to,
+        from: config.email.resend.fromEmail,
+      },
+      'Failed to send email via Resend'
+    );
     throw new Error(`Resend email sending failed: ${error.message}`);
   }
 

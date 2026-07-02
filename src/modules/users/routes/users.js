@@ -24,6 +24,7 @@ import {
   bulkInviteUsers,
   bulkInviteUsersFromExcel,
   downloadBulkInviteTemplate,
+  resendInvite,
 } from '../controllers/userController.js';
 
 const router = express.Router();
@@ -90,7 +91,7 @@ const updateUserSchema = z.object({
 });
 
 const bulkActionsSchema = z.object({
-  action: z.enum(['activate', 'suspend', 'delete']),
+  action: z.enum(['activate', 'suspend', 'delete', 'resend_invite']),
   userIds: z.array(z.string()).min(1, 'At least one user ID is required'),
 });
 
@@ -136,6 +137,7 @@ router.get('/search', requireAuth, requireAdmin, asyncHandler(searchUsers));
 router.get('/:id', requireAuth, requireAdmin, asyncHandler(getUserById));
 router.patch('/:id', requireAuth, requireAdmin, validateBody(updateUserSchema), asyncHandler(updateUser));
 router.delete('/:id', requireAuth, requireAdmin, asyncHandler(deleteUser));
+router.post('/:id/resend-invite', requireAuth, requireAdmin, asyncHandler(resendInvite));
 router.post('/bulk-actions', requireAuth, requireAdmin, validateBody(bulkActionsSchema), asyncHandler(bulkActions));
 router.post('/:id/verify', requireAuth, requireAdmin, asyncHandler(verifyInstructor));
 

@@ -154,6 +154,8 @@ userSchema.methods.toPublicJSON = function() {
   delete userObject.passwordResetExpires;
   delete userObject.emailVerificationToken;
   delete userObject.emailVerificationExpires;
+  userObject.invitePending = Boolean(userObject.inviteToken);
+  userObject.inviteExpiresAt = userObject.inviteTokenExpires || null;
   delete userObject.inviteToken;
   delete userObject.inviteTokenExpires;
   return userObject;

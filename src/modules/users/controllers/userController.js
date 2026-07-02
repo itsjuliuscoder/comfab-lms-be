@@ -183,7 +183,11 @@ export const getAllUsers = async (req, res) => {
     // Build query
     const query = {};
     if (role) query.role = role;
-    if (status) query.status = status;
+    if (status === 'PENDING') {
+      query.inviteToken = { $ne: null, $exists: true };
+    } else if (status) {
+      query.status = status;
+    }
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -201,7 +205,8 @@ export const getAllUsers = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const result = createPaginationResult(users, total, page, limit);
+    const publicUsers = users.map((user) => user.toPublicJSON());
+    const result = createPaginationResult(publicUsers, total, page, limit);
     return successResponse(res, result, 'Users retrieved successfully');
   } catch (error) {
     logger.error('Get all users error:', error);
@@ -218,7 +223,7 @@ export const getUserById = async (req, res) => {
       return notFoundResponse(res, 'User');
     }
 
-    return successResponse(res, { user }, 'User retrieved successfully');
+    return successResponse(res, { user: user.toPublicJSON() }, 'User retrieved successfully');
   } catch (error) {
     logger.error('Get user by ID error:', error);
     return errorResponse(res, error);
@@ -246,7 +251,7 @@ export const updateUser = async (req, res) => {
       return notFoundResponse(res, 'User');
     }
 
-    return successResponse(res, { user }, 'User updated successfully');
+    return successResponse(res, { user: user.toPublicJSON() }, 'User updated successfully');
   } catch (error) {
     logger.error('Update user error:', error);
     return errorResponse(res, error);
@@ -265,6 +270,55 @@ export const deleteUser = async (req, res) => {
     return successResponse(res, null, 'User deleted successfully');
   } catch (error) {
     logger.error('Delete user error:', error);
+    return errorResponse(res, error);
+  }
+};
+
+// POST /users/:id/resend-invite - Resend invitation email (admin)
+export const resendInvite = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('+password');
+
+    if (!user) {
+      return notFoundResponse(res, 'User');
+    }
+
+    if (!user.inviteToken && user.password) {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'USER_ALREADY_ONBOARDED',
+          message: 'User has already completed onboarding',
+        },
+      });
+    }
+
+    const crypto = await import('crypto');
+    const inviteToken = crypto.randomBytes(32).toString('hex');
+    user.inviteToken = inviteToken;
+    user.inviteTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await user.save();
+
+    try {
+      const { sendInvitationEmail } = await import('../../../config/email.js');
+      await sendInvitationEmail(user, inviteToken, req.user);
+    } catch (emailError) {
+      logger.error('Failed to resend invite email:', emailError);
+      return res.status(500).json({
+        ok: false,
+        error: {
+          code: 'EMAIL_SEND_FAILED',
+          message: 'Failed to send invitation email',
+        },
+      });
+    }
+
+    return successResponse(res, {
+      user: user.toPublicJSON(),
+      message: 'Invitation email resent successfully',
+    }, 'Invitation email resent successfully');
+  } catch (error) {
+    logger.error('Resend invite error:', error);
     return errorResponse(res, error);
   }
 };
@@ -301,6 +355,34 @@ export const bulkActions = async (req, res) => {
       case 'delete':
         result = await User.deleteMany({ _id: { $in: userIds } });
         break;
+      case 'resend_invite': {
+        const pendingUsers = await User.find({
+          _id: { $in: userIds },
+          inviteToken: { $ne: null, $exists: true },
+        });
+        const { sendInvitationEmail } = await import('../../../config/email.js');
+        const crypto = await import('crypto');
+        let sent = 0;
+        let skipped = 0;
+
+        for (const pendingUser of pendingUsers) {
+          try {
+            const inviteToken = crypto.randomBytes(32).toString('hex');
+            pendingUser.inviteToken = inviteToken;
+            pendingUser.inviteTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            await pendingUser.save();
+            await sendInvitationEmail(pendingUser, inviteToken, req.user);
+            sent += 1;
+          } catch (emailError) {
+            logger.error(`Failed to resend invite to ${pendingUser.email}:`, emailError);
+            skipped += 1;
+          }
+        }
+
+        skipped += userIds.length - pendingUsers.length;
+        result = { sent, skipped };
+        break;
+      }
       default:
         return res.status(400).json({
           ok: false,
@@ -333,7 +415,11 @@ export const searchUsers = async (req, res) => {
       ];
     }
     if (role) query.role = role;
-    if (status) query.status = status;
+    if (status === 'PENDING') {
+      query.inviteToken = { $ne: null, $exists: true };
+    } else if (status) {
+      query.status = status;
+    }
 
     // Get total count
     const total = await User.countDocuments(query);
@@ -345,7 +431,8 @@ export const searchUsers = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(limit);
 
-    const result = createPaginationResult(users, total, page, limit);
+    const publicUsers = users.map((user) => user.toPublicJSON());
+    const result = createPaginationResult(publicUsers, total, page, limit);
     return successResponse(res, result, 'Search completed successfully');
   } catch (error) {
     logger.error('Search users error:', error);
