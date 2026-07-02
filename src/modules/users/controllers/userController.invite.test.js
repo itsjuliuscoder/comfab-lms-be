@@ -34,6 +34,33 @@ describe("userController.inviteUser", () => {
     mocked.sendInvitationEmail.mockReset();
   });
 
+  it("returns 400 for an invalid cohort ID", async () => {
+    mocked.User.findByEmail.mockResolvedValue(null);
+
+    const req = {
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        role: "PARTICIPANT",
+        cohortId: "admin-team",
+      },
+      user: { _id: "admin-user-1" },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({
+          code: "INVALID_COHORT_ID",
+        }),
+      })
+    );
+  });
+
   it("creates an invited user with a plus-alias email and no password", async () => {
     mocked.User.findByEmail.mockResolvedValue(null);
     mocked.User.mockImplementation(function User(data) {

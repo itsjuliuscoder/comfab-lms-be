@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 import { uploadToCloudinary, deleteFromCloudinary } from '../../../config/cloudinary.js';
 import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
@@ -399,6 +400,16 @@ export const inviteUser = async (req, res) => {
 
     // Validate cohort if provided
     if (cohortId) {
+      if (!mongoose.Types.ObjectId.isValid(cohortId)) {
+        return res.status(400).json({
+          ok: false,
+          error: {
+            code: 'INVALID_COHORT_ID',
+            message: 'Invalid cohort ID',
+          },
+        });
+      }
+
       const { Cohort } = await import('../../cohorts/models/Cohort.js');
       const cohort = await Cohort.findById(cohortId);
       if (!cohort) {
