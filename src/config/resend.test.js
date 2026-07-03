@@ -59,6 +59,8 @@ describe("resend config", () => {
       })
     );
     expect(template).not.toBeInstanceOf(Promise);
+    expect(template.html).toContain("#6c5ce7");
+    expect(template.html).toContain("https://lms.theconfab.org/confab-ft.png");
   });
 
   it("includes reset-password links in password reset templates", () => {
@@ -73,6 +75,23 @@ describe("resend config", () => {
     expect(template.text).toContain(
       "https://lms.theconfab.org/reset-password?token=reset-token-123"
     );
+    expect(template.html).toContain("Reset Password");
+    expect(template.html).toContain("#6c5ce7");
+  });
+
+  it("invitation templates use branded layout and invite link", () => {
+    const template = createResendTemplates.invitationEmail(
+      { name: "Jane Doe", email: "jane@example.com", role: "ADMIN" },
+      "invite-token-123",
+      { name: "Julius Olajumoke" }
+    );
+
+    expect(template.html).toContain("You&#39;re invited!");
+    expect(template.html).toContain("Julius Olajumoke");
+    expect(template.html).toContain(
+      "https://lms.theconfab.org/complete-invite?token=invite-token-123"
+    );
+    expect(template.html).toContain("confab-ft.png");
   });
 
   it("returns a consistent success shape when Resend sends successfully", async () => {

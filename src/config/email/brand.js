@@ -1,0 +1,26 @@
+import { config } from '../env.js';
+
+export const emailBrand = {
+  primary: '#6c5ce7',
+  primaryHover: '#5b4bd4',
+  accent: '#22c55e',
+  accentHover: '#16a34a',
+  textPrimary: '#171717',
+  textMuted: '#525252',
+  textLight: '#737373',
+  background: '#f5f5f5',
+  card: '#ffffff',
+  border: '#e5e5e5',
+  warningBg: '#fffbeb',
+  warningBorder: '#fcd34d',
+  warningText: '#92400e',
+  dangerBg: '#fef2f2',
+  dangerBorder: '#fca5a5',
+  dangerText: '#991b1b',
+  infoBg: '#f3f1ff',
+  infoBorder: '#d4ccff',
+  logoUrl: `${config.app.clientUrl}/confab-ft.png`,
+  supportEmail: 'theconfab01@gmail.com',
+  appName: config.app.name,
+  clientUrl: config.app.clientUrl,
+};

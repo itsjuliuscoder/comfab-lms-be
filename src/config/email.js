@@ -1,6 +1,7 @@
 import { config } from './env.js';
 import { logger } from '../utils/logger.js';
 import { sendEmailWithNodemailer, createNodemailerTemplates } from './nodemailer.js';
+import { createEmailTemplates } from './email/templates.js';
 
 // Import Resend functions (assuming they exist in resend.js)
 let sendEmailWithResend, createResendTemplates;
@@ -216,31 +217,12 @@ export class EmailService {
   // Test email service
   async testEmailService(testEmail) {
     try {
+      const template = createEmailTemplates.testEmail(this.provider);
       const result = await this.sendCustomEmail(
         testEmail,
-        `Test Email from ${config.app.name}`,
-        `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">Test Email</h2>
-            <p>This is a test email from ${config.app.name} using ${this.provider}.</p>
-            <p>If you received this email, the email service is working correctly!</p>
-            <p>Provider: ${this.provider}</p>
-            <p>Timestamp: ${new Date().toISOString()}</p>
-            <p>Best regards,<br>The ${config.app.name} Team</p>
-          </div>
-        `,
-        `
-          Test Email from ${config.app.name}
-          
-          This is a test email from ${config.app.name} using ${this.provider}.
-          If you received this email, the email service is working correctly!
-          
-          Provider: ${this.provider}
-          Timestamp: ${new Date().toISOString()}
-          
-          Best regards,
-          The ${config.app.name} Team
-        `
+        template.subject,
+        template.html,
+        template.text
       );
 
       this.logger.info(`✅ Test email sent successfully via ${this.provider}`);
