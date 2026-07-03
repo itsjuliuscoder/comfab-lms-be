@@ -26,10 +26,36 @@ describe('validateInviteAssignment', () => {
     ).toThrow(expect.objectContaining({ code: 'INVALID_ADMIN_INVITE' }));
   });
 
-  it('requires cohort for participants', () => {
+  it('requires program and cohort for participants', () => {
     expect(() =>
       validateInviteAssignment({ role: 'PARTICIPANT', cohortId: null, programId: null })
+    ).toThrow(expect.objectContaining({ code: 'PROGRAM_REQUIRED' }));
+
+    expect(() =>
+      validateInviteAssignment({
+        role: 'PARTICIPANT',
+        cohortId: null,
+        programId: '507f1f77bcf86cd799439012',
+      })
     ).toThrow(expect.objectContaining({ code: 'COHORT_REQUIRED' }));
+
+    expect(() =>
+      validateInviteAssignment({
+        role: 'PARTICIPANT',
+        cohortId: '507f1f77bcf86cd799439011',
+        programId: null,
+      })
+    ).toThrow(expect.objectContaining({ code: 'PROGRAM_REQUIRED' }));
+  });
+
+  it('allows participant invite with program and cohort', () => {
+    expect(() =>
+      validateInviteAssignment({
+        role: 'PARTICIPANT',
+        cohortId: '507f1f77bcf86cd799439011',
+        programId: '507f1f77bcf86cd799439012',
+      })
+    ).not.toThrow();
   });
 
   it('requires program for instructors without cohort', () => {
@@ -82,6 +108,7 @@ describe('resolveInviteContext', () => {
     const context = await resolveInviteContext({
       role: 'PARTICIPANT',
       cohortId,
+      programId,
     });
 
     expect(context).toEqual({
@@ -90,6 +117,26 @@ describe('resolveInviteContext', () => {
       programId,
       cohortId,
     });
+  });
+
+  it('rejects cohort that does not belong to the selected program', async () => {
+    const cohortId = '507f1f77bcf86cd799439011';
+    const programId = '507f1f77bcf86cd799439012';
+    const otherProgramId = '507f1f77bcf86cd799439099';
+
+    mocked.Cohort.findById.mockResolvedValue({
+      _id: cohortId,
+      name: 'Cohort Alpha',
+      programId,
+    });
+
+    await expect(
+      resolveInviteContext({
+        role: 'PARTICIPANT',
+        cohortId,
+        programId: otherProgramId,
+      })
+    ).rejects.toMatchObject({ code: 'COHORT_PROGRAM_MISMATCH' });
   });
 
   it('resolves program-only context for instructors', async () => {

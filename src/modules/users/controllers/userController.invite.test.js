@@ -48,6 +48,7 @@ describe("userController.inviteUser", () => {
         name: "Test User",
         email: "test@example.com",
         role: "PARTICIPANT",
+        programId: "507f1f77bcf86cd799439012",
         cohortId: "admin-team",
       },
       user: { _id: "admin-user-1" },
@@ -67,6 +68,32 @@ describe("userController.inviteUser", () => {
     );
   });
 
+  it("returns 400 when participant invite omits program", async () => {
+    mocked.User.findByEmail.mockResolvedValue(null);
+
+    const req = {
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        role: "PARTICIPANT",
+      },
+      user: { _id: "admin-user-1" },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({
+          code: "PROGRAM_REQUIRED",
+        }),
+      })
+    );
+  });
+
   it("returns 400 when participant invite omits cohort", async () => {
     mocked.User.findByEmail.mockResolvedValue(null);
 
@@ -75,6 +102,7 @@ describe("userController.inviteUser", () => {
         name: "Test User",
         email: "test@example.com",
         role: "PARTICIPANT",
+        programId: "507f1f77bcf86cd799439012",
       },
       user: { _id: "admin-user-1" },
     };

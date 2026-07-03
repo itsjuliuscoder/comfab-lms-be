@@ -1,5 +1,7 @@
 import { config } from '../env.js';
 
+const platformName = 'CONFAB Learning Platform';
+
 export const emailBrand = {
   primary: '#6c5ce7',
   primaryHover: '#5b4bd4',
@@ -21,8 +23,8 @@ export const emailBrand = {
   infoBorder: '#d4ccff',
   logoUrl: `${config.app.clientUrl}/confab-ft.png`,
   supportEmail: 'theconfab01@gmail.com',
-  appName: config.app.name,
-  platformName: 'CONFAB Learning Platform',
+  appName: platformName,
+  platformName,
   teamName: 'the CONFAB Team',
   clientUrl: config.app.clientUrl,
 };

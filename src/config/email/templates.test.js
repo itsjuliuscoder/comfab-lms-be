@@ -60,6 +60,7 @@ describe('createEmailTemplates', () => {
     brandChecks(template);
     expect(template.html).toContain('Julius Olajumoke');
     expect(template.html).toContain('CONFAB Learning Platform');
+    expect(template.html).not.toContain('Purpose Discovery LMS');
     expect(template.html).toContain('Administrator');
     expect(template.html).toContain(
       'https://lms.theconfab.org/complete-invite?token=invite-token-456'

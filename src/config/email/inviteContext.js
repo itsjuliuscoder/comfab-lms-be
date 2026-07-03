@@ -35,6 +35,16 @@ export async function resolveInviteContext({ role, cohortId, programId }) {
     context.cohortName = cohort.name;
     context.cohortId = cohort._id.toString();
     resolvedProgramId = cohort.programId?.toString() || resolvedProgramId;
+
+    if (programId && cohort.programId) {
+      const cohortProgramId = cohort.programId.toString();
+      const requestedProgramId = programId.toString();
+      if (cohortProgramId !== requestedProgramId) {
+        const error = new Error('Selected cohort does not belong to the selected program');
+        error.code = 'COHORT_PROGRAM_MISMATCH';
+        throw error;
+      }
+    }
   }
 
   if (resolvedProgramId) {
@@ -82,6 +92,11 @@ export function validateInviteAssignment({ role, cohortId, programId }) {
   }
 
   if (role === 'PARTICIPANT') {
+    if (!programId) {
+      const error = new Error('Program is required when inviting a participant');
+      error.code = 'PROGRAM_REQUIRED';
+      throw error;
+    }
     if (!cohortId) {
       const error = new Error('Cohort is required when inviting a participant');
       error.code = 'COHORT_REQUIRED';

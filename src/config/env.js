@@ -49,7 +49,7 @@ const envSchema = z.object({
   
   // App
   INITIAL_ADMIN_EMAIL: z.string().email('Invalid initial admin email').default('admin@theconfab.org'),
-  PRODUCT_NAME: z.string().default('CONFAB LMS'),
+  PRODUCT_NAME: z.string().default('CONFAB Learning Platform'),
   CLIENT_URL: z.string().url().default('https://lms.theconfab.org'),
   
   // Feature Flags
