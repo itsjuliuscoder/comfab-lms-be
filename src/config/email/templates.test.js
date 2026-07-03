@@ -59,11 +59,41 @@ describe('createEmailTemplates', () => {
     );
     brandChecks(template);
     expect(template.html).toContain('Julius Olajumoke');
+    expect(template.html).toContain('CONFAB Learning Platform');
+    expect(template.html).toContain('Administrator');
     expect(template.html).toContain(
       'https://lms.theconfab.org/complete-invite?token=invite-token-456'
     );
     expect(template.html).toContain('Complete Account Setup');
     expect(template.html).toContain('7 days');
+  });
+
+  it('invitationEmail uses program and cohort copy for participants', () => {
+    const template = createEmailTemplates.invitationEmail(
+      { ...sampleUser, role: 'PARTICIPANT' },
+      'invite-token-789',
+      { name: 'Admin User' },
+      { programName: 'Purpose Discovery', cohortName: 'Cohort 2026' }
+    );
+    brandChecks(template);
+    expect(template.html).toContain('the CONFAB Team');
+    expect(template.html).toContain('Purpose Discovery (Cohort 2026)');
+    expect(template.html).toContain('CONFAB Learning Platform');
+    expect(template.text).toContain('Purpose Discovery (Cohort 2026)');
+  });
+
+  it('invitationEmail uses program-only copy for instructors', () => {
+    const template = createEmailTemplates.invitationEmail(
+      { ...sampleUser, role: 'INSTRUCTOR' },
+      'invite-token-101',
+      { name: 'Admin User' },
+      { programName: 'Leadership Track' }
+    );
+    brandChecks(template);
+    expect(template.html).toContain('the CONFAB Team');
+    expect(template.html).toContain('Leadership Track');
+    expect(template.html).not.toContain('Leadership Track (');
+    expect(template.text).toContain('Leadership Track on CONFAB Learning Platform');
   });
 
   it('enrollmentEmail uses accent button and course link', () => {

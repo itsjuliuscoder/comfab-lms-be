@@ -97,10 +97,10 @@ export class EmailService {
   }
 
   // Send invitation email
-  async sendInvitationEmail(user, inviteToken, invitedBy) {
+  async sendInvitationEmail(user, inviteToken, invitedBy, inviteContext = {}) {
     const emailOptions = this.provider === 'nodemailer'
-      ? createNodemailerTemplates.invitationEmail(user, inviteToken, invitedBy)
-      : createResendTemplates?.invitationEmail(user, inviteToken, invitedBy);
+      ? createNodemailerTemplates.invitationEmail(user, inviteToken, invitedBy, inviteContext)
+      : createResendTemplates?.invitationEmail(user, inviteToken, invitedBy, inviteContext);
 
     if (!emailOptions) {
       throw new Error('Email templates not available for current provider');
@@ -241,7 +241,8 @@ export const emailService = new EmailService();
 export const sendEmail = (emailOptions) => emailService.sendEmail(emailOptions);
 export const sendWelcomeEmail = (user) => emailService.sendWelcomeEmail(user);
 export const sendPasswordResetEmail = (user, resetToken) => emailService.sendPasswordResetEmail(user, resetToken);
-export const sendInvitationEmail = (user, inviteToken, invitedBy) => emailService.sendInvitationEmail(user, inviteToken, invitedBy);
+export const sendInvitationEmail = (user, inviteToken, invitedBy, inviteContext) =>
+  emailService.sendInvitationEmail(user, inviteToken, invitedBy, inviteContext);
 export const sendEnrollmentEmail = (user, course) => emailService.sendEnrollmentEmail(user, course);
 export const sendVerificationEmail = (user, verificationToken) => emailService.sendVerificationEmail(user, verificationToken);
 export const sendPasswordChangedEmail = (user) => emailService.sendPasswordChangedEmail(user);

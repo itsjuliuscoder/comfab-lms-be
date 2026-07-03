@@ -22,5 +22,7 @@ export const emailBrand = {
   logoUrl: `${config.app.clientUrl}/confab-ft.png`,
   supportEmail: 'theconfab01@gmail.com',
   appName: config.app.name,
+  platformName: 'CONFAB Learning Platform',
+  teamName: 'the CONFAB Team',
   clientUrl: config.app.clientUrl,
 };

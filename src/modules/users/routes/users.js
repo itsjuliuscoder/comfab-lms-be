@@ -100,6 +100,7 @@ const inviteUserSchema = z.object({
   email: z.string().email('Invalid email address'),
   role: z.enum(['ADMIN', 'INSTRUCTOR', 'PARTICIPANT']).default('PARTICIPANT'),
   cohortId: z.string().min(1, 'Cohort ID must be provided if specified').optional(),
+  programId: z.string().min(1, 'Program ID must be provided if specified').optional(),
   roleInCohort: z.enum(['LEADER', 'MEMBER', 'MENTOR']).default('MEMBER').optional(),
 });
 
@@ -111,6 +112,7 @@ const bulkInviteSchema = z.object({
     roleInCohort: z.enum(['LEADER', 'MEMBER', 'MENTOR']).default('MEMBER').optional(),
   })).min(1, 'At least one user is required').max(100, 'Maximum 100 users can be invited at once'),
   cohortId: z.string().min(1, 'Cohort ID must be provided if specified').optional(),
+  programId: z.string().min(1, 'Program ID must be provided if specified').optional(),
   roleInCohort: z.enum(['LEADER', 'MEMBER', 'MENTOR']).default('MEMBER').optional(),
   sendInvitationEmail: z.boolean().default(true),
 });

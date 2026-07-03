@@ -18,6 +18,12 @@ vi.mock("../../../config/email.js", () => ({
   sendInvitationEmail: mocked.sendInvitationEmail,
 }));
 
+vi.mock("../../cohorts/models/Cohort.js", () => ({
+  Cohort: {
+    findById: vi.fn().mockResolvedValue(null),
+  },
+}));
+
 const { inviteUser } = await import("./userController.js");
 
 const createRes = () => {
@@ -61,7 +67,33 @@ describe("userController.inviteUser", () => {
     );
   });
 
-  it("creates an invited user with a plus-alias email and no password", async () => {
+  it("returns 400 when participant invite omits cohort", async () => {
+    mocked.User.findByEmail.mockResolvedValue(null);
+
+    const req = {
+      body: {
+        name: "Test User",
+        email: "test@example.com",
+        role: "PARTICIPANT",
+      },
+      user: { _id: "admin-user-1" },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({
+          code: "COHORT_REQUIRED",
+        }),
+      })
+    );
+  });
+
+  it("creates an invited admin user with a plus-alias email and no password", async () => {
     mocked.User.findByEmail.mockResolvedValue(null);
     mocked.User.mockImplementation(function User(data) {
       Object.assign(this, data);
@@ -80,7 +112,7 @@ describe("userController.inviteUser", () => {
       body: {
         name: "Codex Admin Test User",
         email: "codex.admin.test+123@example.com",
-        role: "PARTICIPANT",
+        role: "ADMIN",
       },
       user: {
         _id: "admin-user-1",
@@ -96,7 +128,7 @@ describe("userController.inviteUser", () => {
       expect.objectContaining({
         name: "Codex Admin Test User",
         email: "codex.admin.test+123@example.com",
-        role: "PARTICIPANT",
+        role: "ADMIN",
         status: "ACTIVE",
         invitedBy: "admin-user-1",
       })

@@ -82,6 +82,11 @@ const userSchema = new mongoose.Schema({
       ref: 'Cohort',
       default: null,
     },
+    programId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Program',
+      default: null,
+    },
     roleInCohort: {
       type: String,
       enum: ['LEADER', 'MEMBER', 'MENTOR'],

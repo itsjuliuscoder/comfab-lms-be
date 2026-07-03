@@ -9,6 +9,70 @@ import {
   buildPlainTextEmail,
 } from './layout.js';
 
+function buildProgramAccessLabel(programName, cohortName) {
+  if (!programName) return brand.platformName;
+  if (cohortName) {
+    return `${programName} (${cohortName})`;
+  }
+  return programName;
+}
+
+function buildInvitationCopy(user, invitedBy, inviteContext = {}) {
+  const { programName = null, cohortName = null } = inviteContext;
+  const role = user.role;
+
+  if (role === 'ADMIN') {
+    const bodyLine = `You have been invited by <strong>${escapeHtml(invitedBy.name)}</strong> to join the <strong>${escapeHtml(brand.platformName)}</strong> as an Administrator.`;
+    return {
+      subject: `You've been invited to administer ${brand.platformName}`,
+      preheader: `${invitedBy.name} invited you to administer ${brand.platformName}.`,
+      heading: "You're invited!",
+      bodyLine,
+      plainBodyLine: `You have been invited by ${invitedBy.name} to join the ${brand.platformName} as an Administrator.`,
+      infoRows: [
+        { label: 'Email', value: escapeHtml(user.email) },
+        { label: 'Role', value: escapeHtml(user.role) },
+      ],
+      plainInfoLines: [`- Email: ${user.email}`, `- Role: ${user.role}`],
+    };
+  }
+
+  const accessLabel = buildProgramAccessLabel(programName, cohortName);
+  const bodyLine = cohortName || programName
+    ? `You have been invited by <strong>${escapeHtml(brand.teamName)}</strong> to join <strong>${escapeHtml(accessLabel)}</strong> on ${escapeHtml(brand.platformName)}.`
+    : `You have been invited by <strong>${escapeHtml(brand.teamName)}</strong> to join ${escapeHtml(brand.platformName)}.`;
+
+  const plainAccessLabel = cohortName || programName
+    ? `${accessLabel} on ${brand.platformName}`
+    : brand.platformName;
+
+  const infoRows = [
+    ...(programName ? [{ label: 'Program', value: escapeHtml(programName) }] : []),
+    ...(cohortName ? [{ label: 'Cohort', value: escapeHtml(cohortName) }] : []),
+    { label: 'Email', value: escapeHtml(user.email) },
+    { label: 'Role', value: escapeHtml(user.role) },
+  ];
+
+  const plainInfoLines = [
+    ...(programName ? [`- Program: ${programName}`] : []),
+    ...(cohortName ? [`- Cohort: ${cohortName}`] : []),
+    `- Email: ${user.email}`,
+    `- Role: ${user.role}`,
+  ];
+
+  const subjectProgram = programName || brand.platformName;
+
+  return {
+    subject: `You've been invited to join ${subjectProgram}`,
+    preheader: `${brand.teamName} invited you to join ${plainAccessLabel}.`,
+    heading: "You're invited!",
+    bodyLine,
+    plainBodyLine: `You have been invited by ${brand.teamName} to join ${plainAccessLabel}.`,
+    infoRows,
+    plainInfoLines,
+  };
+}
+
 export const createEmailTemplates = {
   welcomeEmail: (user) => {
     const dashboardUrl = brand.clientUrl;
@@ -92,17 +156,14 @@ export const createEmailTemplates = {
     };
   },
 
-  invitationEmail: (user, inviteToken, invitedBy) => {
+  invitationEmail: (user, inviteToken, invitedBy, inviteContext = {}) => {
     const inviteUrl = `${brand.clientUrl}/complete-invite?token=${inviteToken}`;
+    const copy = buildInvitationCopy(user, invitedBy, inviteContext);
+
     const bodyHtml = [
       renderParagraph(`Hi ${escapeHtml(user.name)},`),
-      renderParagraph(
-        `You have been invited by <strong>${escapeHtml(invitedBy.name)}</strong> to join ${escapeHtml(brand.appName)}.`
-      ),
-      renderInfoCard([
-        { label: 'Email', value: escapeHtml(user.email) },
-        { label: 'Role', value: escapeHtml(user.role) },
-      ]),
+      renderParagraph(copy.bodyLine),
+      renderInfoCard(copy.infoRows),
       renderParagraph('Complete your account setup and set your password to get started:'),
     ].join('');
 
@@ -113,24 +174,23 @@ export const createEmailTemplates = {
     );
 
     return {
-      subject: `You've been invited to join ${brand.appName}`,
+      subject: copy.subject,
       html: renderEmailLayout({
-        preheader: `${invitedBy.name} invited you to join ${brand.appName}.`,
-        heading: "You're invited!",
+        preheader: copy.preheader,
+        heading: copy.heading,
         bodyHtml,
         ctaHtml,
         footerNote,
       }),
       text: buildPlainTextEmail({
-        heading: `You've been invited to join ${brand.appName}!`,
+        heading: copy.subject,
         lines: [
           `Hi ${user.name},`,
           '',
-          `You have been invited by ${invitedBy.name} to join ${brand.appName}.`,
+          copy.plainBodyLine,
           '',
           'Your account details:',
-          `- Email: ${user.email}`,
-          `- Role: ${user.role}`,
+          ...copy.plainInfoLines,
           '',
           'Complete your account setup and set your password to get started.',
           '',

@@ -4,6 +4,49 @@ import { uploadToCloudinary, deleteFromCloudinary } from '../../../config/cloudi
 import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
 import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
+import {
+  resolveInviteContext,
+  resolveInviteContextFromAssignment,
+  validateInviteAssignment,
+} from '../../../config/email/inviteContext.js';
+
+function inviteValidationErrorResponse(res, error) {
+  if (error.code) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
+  return null;
+}
+
+async function buildInviteAssignment({ role, cohortId, programId, roleInCohort = 'MEMBER' }) {
+  validateInviteAssignment({ role, cohortId, programId });
+  const inviteContext = await resolveInviteContext({ role, cohortId, programId });
+
+  if (cohortId) {
+    const { Cohort } = await import('../../cohorts/models/Cohort.js');
+    const cohort = await Cohort.findById(cohortId);
+    if (cohort?.isFull()) {
+      const error = new Error('Cohort is full');
+      error.code = 'COHORT_FULL';
+      throw error;
+    }
+  }
+
+  const assignment = role === 'ADMIN'
+    ? null
+    : {
+        cohortId: inviteContext.cohortId || null,
+        programId: inviteContext.programId || null,
+        roleInCohort,
+      };
+
+  return { inviteContext, assignment };
+}
 
 function parseSendInvitationEmailFlag(value, defaultValue = true) {
   if (value === undefined || value === null || value === '') {
@@ -301,7 +344,8 @@ export const resendInvite = async (req, res) => {
 
     try {
       const { sendInvitationEmail } = await import('../../../config/email.js');
-      await sendInvitationEmail(user, inviteToken, req.user);
+      const inviteContext = await resolveInviteContextFromAssignment(user);
+      await sendInvitationEmail(user, inviteToken, req.user, inviteContext);
     } catch (emailError) {
       logger.error('Failed to resend invite email:', emailError);
       return res.status(500).json({
@@ -371,7 +415,8 @@ export const bulkActions = async (req, res) => {
             pendingUser.inviteToken = inviteToken;
             pendingUser.inviteTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
             await pendingUser.save();
-            await sendInvitationEmail(pendingUser, inviteToken, req.user);
+            const inviteContext = await resolveInviteContextFromAssignment(pendingUser);
+            await sendInvitationEmail(pendingUser, inviteToken, req.user, inviteContext);
             sent += 1;
           } catch (emailError) {
             logger.error(`Failed to resend invite to ${pendingUser.email}:`, emailError);
@@ -471,7 +516,14 @@ export const verifyInstructor = async (req, res) => {
 // POST /users/invite - Invite user (admin)
 export const inviteUser = async (req, res) => {
   try {
-    const { name, email, role = 'PARTICIPANT', cohortId, roleInCohort = 'MEMBER' } = req.body;
+    const {
+      name,
+      email,
+      role = 'PARTICIPANT',
+      cohortId,
+      programId,
+      roleInCohort = 'MEMBER',
+    } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findByEmail(email);
@@ -485,40 +537,19 @@ export const inviteUser = async (req, res) => {
       });
     }
 
-    // Validate cohort if provided
-    if (cohortId) {
-      if (!mongoose.Types.ObjectId.isValid(cohortId)) {
-        return res.status(400).json({
-          ok: false,
-          error: {
-            code: 'INVALID_COHORT_ID',
-            message: 'Invalid cohort ID',
-          },
-        });
-      }
-
-      const { Cohort } = await import('../../cohorts/models/Cohort.js');
-      const cohort = await Cohort.findById(cohortId);
-      if (!cohort) {
-        return res.status(400).json({
-          ok: false,
-          error: {
-            code: 'COHORT_NOT_FOUND',
-            message: 'Cohort not found',
-          },
-        });
-      }
-
-      // Check if cohort is full
-      if (cohort.isFull()) {
-        return res.status(400).json({
-          ok: false,
-          error: {
-            code: 'COHORT_FULL',
-            message: 'Cohort is full',
-          },
-        });
-      }
+    let inviteContext;
+    let assignment;
+    try {
+      ({ inviteContext, assignment } = await buildInviteAssignment({
+        role,
+        cohortId,
+        programId,
+        roleInCohort,
+      }));
+    } catch (validationError) {
+      const validationResponse = inviteValidationErrorResponse(res, validationError);
+      if (validationResponse) return validationResponse;
+      throw validationError;
     }
 
     // Generate invite token
@@ -535,24 +566,15 @@ export const inviteUser = async (req, res) => {
       inviteToken,
       inviteTokenExpires: inviteTokenExpiry,
       invitedBy: req.user._id,
+      ...(assignment ? { cohortAssignment: assignment } : {}),
     });
 
     await user.save();
 
-    // Add user to cohort if specified (for invited users, we'll add them when they complete the invite)
-    if (cohortId) {
-      // Store cohort information in the user document for later use
-      user.cohortAssignment = {
-        cohortId,
-        roleInCohort,
-      };
-      await user.save();
-    }
-
     // Send invite email
     try {
       const { sendInvitationEmail } = await import('../../../config/email.js');
-      await sendInvitationEmail(user, inviteToken, req.user);
+      await sendInvitationEmail(user, inviteToken, req.user, inviteContext);
     } catch (emailError) {
       logger.error('Failed to send invite email:', emailError);
       // Don't fail the request if email fails, but log it
@@ -560,9 +582,9 @@ export const inviteUser = async (req, res) => {
 
     const userData = user.toPublicJSON();
 
-    return successResponse(res, { 
+    return successResponse(res, {
       user: userData,
-      message: 'User invited successfully. Invitation email sent.'
+      message: 'User invited successfully. Invitation email sent.',
     }, 'User invited successfully', 201);
   } catch (error) {
     logger.error('Invite user error:', error);
@@ -573,23 +595,13 @@ export const inviteUser = async (req, res) => {
 // POST /users/bulk-invite - Bulk invite users (admin)
 export const bulkInviteUsers = async (req, res) => {
   try {
-    const { users, cohortId, roleInCohort = 'MEMBER', sendInvitationEmail: shouldSendInvitationEmail = true } = req.body;
-
-    // Validate cohort if provided
-    let cohort = null;
-    if (cohortId) {
-      const { Cohort } = await import('../../cohorts/models/Cohort.js');
-      cohort = await Cohort.findById(cohortId);
-      if (!cohort) {
-        return res.status(400).json({
-          ok: false,
-          error: {
-            code: 'COHORT_NOT_FOUND',
-            message: 'Cohort not found',
-          },
-        });
-      }
-    }
+    const {
+      users,
+      cohortId,
+      programId,
+      roleInCohort = 'MEMBER',
+      sendInvitationEmail: shouldSendInvitationEmail = true,
+    } = req.body;
 
     const results = {
       successful: [],
@@ -600,7 +612,12 @@ export const bulkInviteUsers = async (req, res) => {
     // Process each user
     for (const userData of users) {
       try {
-        const { name, email, role = 'PARTICIPANT', roleInCohort: userRoleInCohort = roleInCohort } = userData;
+        const {
+          name,
+          email,
+          role = 'PARTICIPANT',
+          roleInCohort: userRoleInCohort = roleInCohort,
+        } = userData;
 
         // Check if user already exists
         const existingUser = await User.findByEmail(email);
@@ -613,11 +630,19 @@ export const bulkInviteUsers = async (req, res) => {
           continue;
         }
 
-        // Check if cohort is full (only if cohort is specified)
-        if (cohort && cohort.isFull()) {
+        let inviteContext;
+        let assignment;
+        try {
+          ({ inviteContext, assignment } = await buildInviteAssignment({
+            role,
+            cohortId,
+            programId,
+            roleInCohort: userRoleInCohort,
+          }));
+        } catch (validationError) {
           results.failed.push({
             email,
-            reason: 'Cohort is full',
+            reason: validationError.message || 'Invalid invite assignment',
             name,
           });
           continue;
@@ -637,15 +662,8 @@ export const bulkInviteUsers = async (req, res) => {
           inviteToken,
           inviteTokenExpires: inviteTokenExpiry,
           invitedBy: req.user._id,
+          ...(assignment ? { cohortAssignment: assignment } : {}),
         });
-
-        // Add cohort assignment if specified
-        if (cohortId) {
-          user.cohortAssignment = {
-            cohortId,
-            roleInCohort: userRoleInCohort,
-          };
-        }
 
         await user.save();
 
@@ -653,7 +671,7 @@ export const bulkInviteUsers = async (req, res) => {
         if (shouldSendInvitationEmail) {
           try {
             const { sendInvitationEmail } = await import('../../../config/email.js');
-            await sendInvitationEmail(user, inviteToken, req.user);
+            await sendInvitationEmail(user, inviteToken, req.user, inviteContext);
           } catch (emailError) {
             logger.error(`Failed to send invite email to ${email}:`, emailError);
             // Don't fail the entire request if email fails
@@ -709,6 +727,7 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
     const shouldSendInvitationEmail = parseSendInvitationEmailFlag(
       req.body.sendInvitationEmail ?? req.body.sendWelcomeEmail
     );
+    const { cohortId, programId, roleInCohort = 'MEMBER' } = req.body;
     
     // Check if file was uploaded
     if (!req.file) {
@@ -818,11 +837,19 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
           continue;
         }
 
-        // Check if cohort is full (only if cohort is specified)
-        if (cohort && cohort.isFull()) {
+        let inviteContext;
+        let assignment;
+        try {
+          ({ inviteContext, assignment } = await buildInviteAssignment({
+            role,
+            cohortId,
+            programId,
+            roleInCohort: userRoleInCohort,
+          }));
+        } catch (validationError) {
           results.failed.push({
             email,
-            reason: 'Cohort is full',
+            reason: validationError.message || 'Invalid invite assignment',
             name,
           });
           continue;
@@ -842,15 +869,8 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
           inviteToken,
           inviteTokenExpires: inviteTokenExpiry,
           invitedBy: req.user._id,
+          ...(assignment ? { cohortAssignment: assignment } : {}),
         });
-
-        // Add cohort assignment if specified
-        if (cohortId) {
-          user.cohortAssignment = {
-            cohortId,
-            roleInCohort: userRoleInCohort,
-          };
-        }
 
         await user.save();
 
@@ -858,7 +878,7 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
         if (shouldSendInvitationEmail) {
           try {
             const { sendInvitationEmail } = await import('../../../config/email.js');
-            await sendInvitationEmail(user, inviteToken, req.user);
+            await sendInvitationEmail(user, inviteToken, req.user, inviteContext);
           } catch (emailError) {
             logger.error(`Failed to send invite email to ${email}:`, emailError);
             // Don't fail the entire request if email fails
