@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => {
   const send = vi.fn();
+  const batchSend = vi.fn();
   return {
     send,
+    batchSend,
     Resend: vi.fn(function Resend() {
-      return { emails: { send } };
+      return { emails: { send }, batch: { send: batchSend } };
     }),
   };
 });
@@ -37,11 +39,12 @@ vi.mock("../utils/logger.js", () => ({
   },
 }));
 
-const { createResendTemplates, sendEmailWithResend } = await import("./resend.js");
+const { createResendTemplates, sendEmailWithResend, sendBatchWithResend } = await import("./resend.js");
 
 describe("resend config", () => {
   beforeEach(() => {
     mocked.send.mockReset();
+    mocked.batchSend.mockReset();
   });
 
   it("returns plain template objects from createResendTemplates", () => {
@@ -161,5 +164,36 @@ describe("resend config", () => {
         text: "Hello",
       })
     ).rejects.toThrow("Resend email sending failed: Domain not verified");
+  });
+
+  it("sends batch emails in chunks of 100 with idempotency keys", async () => {
+    mocked.batchSend.mockImplementation(async (chunk, options) => ({
+      data: chunk.map((email) => ({ id: `id-${email.to[0]}` })),
+      error: null,
+      options,
+    }));
+
+    const recipients = Array.from({ length: 101 }, (_, index) => ({
+      from: "CONFAB <noreply@theconfab.org>",
+      to: [`user${index}@example.com`],
+      subject: "Hello",
+      html: "<p>Hello</p>",
+      text: "Hello",
+    }));
+
+    const result = await sendBatchWithResend(recipients, {
+      idempotencyPrefix: "admin-email/test",
+    });
+
+    expect(mocked.batchSend).toHaveBeenCalledTimes(2);
+    expect(mocked.batchSend.mock.calls[0][1]).toEqual({
+      idempotencyKey: "admin-email/test/chunk-0",
+    });
+    expect(mocked.batchSend.mock.calls[1][1]).toEqual({
+      idempotencyKey: "admin-email/test/chunk-1",
+    });
+    expect(result.sent).toBe(101);
+    expect(result.failed).toBe(0);
+    expect(result.results).toHaveLength(101);
   });
 });

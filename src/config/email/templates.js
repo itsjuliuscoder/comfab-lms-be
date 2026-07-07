@@ -398,6 +398,34 @@ export const createEmailTemplates = {
     };
   },
 
+  customAdminEmail: ({ subject, body }) => {
+    const bodyLines = String(body || '')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const bodyHtml = bodyLines.length
+      ? bodyLines.map((line) => renderParagraph(escapeHtml(line))).join('')
+      : renderParagraph('');
+
+    const plainLines = String(body || '')
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd());
+
+    return {
+      subject,
+      html: renderEmailLayout({
+        preheader: subject,
+        heading: subject,
+        bodyHtml,
+      }),
+      text: buildPlainTextEmail({
+        heading: subject,
+        lines: plainLines,
+      }),
+    };
+  },
+
   testEmail: (provider) => {
     const bodyHtml = [
       renderParagraph(`This is a test email from ${escapeHtml(brand.appName)}.`),

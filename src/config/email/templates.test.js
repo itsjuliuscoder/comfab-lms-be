@@ -144,6 +144,21 @@ describe('createEmailTemplates', () => {
     expect(template.text).toContain('New features available');
   });
 
+  it('customAdminEmail wraps subject and body in branded layout', () => {
+    const template = createEmailTemplates.customAdminEmail({
+      subject: 'Important update',
+      body: 'Hello team,\nPlease review the latest module.',
+    });
+
+    brandChecks(template);
+    expect(template.subject).toBe('Important update');
+    expect(template.html).toContain('Important update');
+    expect(template.html).toContain('Hello team,');
+    expect(template.html).toContain('Please review the latest module.');
+    expect(template.html).not.toContain('<script>');
+    expect(template.text).toContain('Hello team,');
+  });
+
   it('testEmail includes provider and timestamp', () => {
     const template = createEmailTemplates.testEmail('resend');
     brandChecks(template);

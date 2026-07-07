@@ -4,11 +4,12 @@ import { sendEmailWithNodemailer, createNodemailerTemplates } from './nodemailer
 import { createEmailTemplates } from './email/templates.js';
 
 // Import Resend functions (assuming they exist in resend.js)
-let sendEmailWithResend, createResendTemplates;
+let sendEmailWithResend, sendBatchWithResend, createResendTemplates;
 
 try {
   const resendModule = await import('./resend.js');
   sendEmailWithResend = resendModule.sendEmailWithResend;
+  sendBatchWithResend = resendModule.sendBatchWithResend;
   createResendTemplates = resendModule.createResendTemplates;
 } catch (error) {
   logger.warn('Resend module not found, using Nodemailer only');
@@ -199,6 +200,78 @@ export class EmailService {
     });
   }
 
+  // Send individual custom emails to multiple recipients
+  async sendBulkCustomEmails(recipients, { subject, html, text, idempotencyPrefix }) {
+    const uniqueRecipients = [...new Set(recipients.map((email) => email.toLowerCase().trim()))];
+
+    if (uniqueRecipients.length === 0) {
+      throw new Error('At least one recipient is required');
+    }
+
+    const fromAddress =
+      this.provider === 'resend'
+        ? config.email.resend.fromEmail
+        : config.email.nodemailer.from || config.email.nodemailer.user;
+
+    if (this.provider === 'resend') {
+      if (!sendBatchWithResend) {
+        throw new Error('Resend batch service not available');
+      }
+
+      const batchEmails = uniqueRecipients.map((recipient) => ({
+        from: fromAddress,
+        to: [recipient],
+        subject,
+        html,
+        text,
+      }));
+
+      return await sendBatchWithResend(batchEmails, { idempotencyPrefix });
+    }
+
+    const settled = await Promise.allSettled(
+      uniqueRecipients.map(async (recipient) => {
+        const result = await this.sendWithNodemailer({
+          to: recipient,
+          subject,
+          html,
+          text,
+        });
+        return { ...result, email: recipient };
+      })
+    );
+
+    const results = settled.map((outcome, index) => {
+      const recipient = uniqueRecipients[index];
+      if (outcome.status === 'fulfilled') {
+        return {
+          success: true,
+          email: recipient,
+          messageId: outcome.value.messageId,
+          provider: 'nodemailer',
+        };
+      }
+
+      return {
+        success: false,
+        email: recipient,
+        error: outcome.reason?.message || 'Failed to send email',
+        provider: 'nodemailer',
+      };
+    });
+
+    const sent = results.filter((result) => result.success).length;
+    const failed = results.length - sent;
+
+    return {
+      success: failed === 0,
+      sent,
+      failed,
+      results,
+      provider: 'nodemailer',
+    };
+  }
+
   // Get current provider
   getCurrentProvider() {
     return this.provider;
@@ -249,6 +322,7 @@ export const sendPasswordChangedEmail = (user) => emailService.sendPasswordChang
 export const sendCourseCompletionEmail = (user, course, options) => emailService.sendCourseCompletionEmail(user, course, options);
 export const sendAnnouncementEmail = (user, announcement, author) => emailService.sendAnnouncementEmail(user, announcement, author);
 export const sendCustomEmail = (to, subject, html, text, attachments) => emailService.sendCustomEmail(to, subject, html, text, attachments);
+export const sendBulkCustomEmails = (recipients, options) => emailService.sendBulkCustomEmails(recipients, options);
 export const testEmailService = (testEmail) => emailService.testEmailService(testEmail);
 export const getCurrentProvider = () => emailService.getCurrentProvider();
 export const setEmailProvider = (provider) => emailService.setProvider(provider);
