@@ -7,7 +7,7 @@ import {
   getCurrentProvider,
 } from '../../../config/email.js';
 import { createEmailTemplates } from '../../../config/email/templates.js';
-import { ActivityService } from '../../activities/services/activityService.js';
+import ActivityService from '../../activities/services/activityService.js';
 import { logger } from '../../../utils/logger.js';
 
 export const MAX_RECIPIENTS_PER_SEND = 500;
