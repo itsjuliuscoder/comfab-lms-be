@@ -8,6 +8,7 @@ import {
 } from '../../../config/email.js';
 import { createEmailTemplates } from '../../../config/email/templates.js';
 import ActivityService from '../../activities/services/activityService.js';
+import { createNotificationsForUsers, notifyAdmins } from '../../notifications/services/notificationService.js';
 import { logger } from '../../../utils/logger.js';
 
 export const MAX_RECIPIENTS_PER_SEND = 500;
@@ -205,6 +206,43 @@ async function logAdminEmailSend({
     });
   } catch (error) {
     logger.warn('Failed to log admin email activity', error);
+  }
+
+  try {
+    const recipientUsers = await User.find({
+      email: { $in: recipients.map(normalizeEmail) },
+      status: 'ACTIVE',
+    }).select('_id');
+
+    if (recipientUsers.length) {
+      await createNotificationsForUsers(
+        recipientUsers.map((user) => user._id),
+        {
+          type: 'ADMIN_MESSAGE',
+          title: subject,
+          message: buildBodyPreview(body) || 'You have a new message from CONFAB LMS.',
+          link: '/dashboard/settings',
+          data: {
+            adminEmailLogId: log._id.toString(),
+            sentBy: adminUser._id.toString(),
+          },
+          priority: 'MEDIUM',
+        }
+      );
+    }
+
+    if (failedRecipients.length > 0) {
+      await notifyAdmins({
+        type: 'SYSTEM',
+        title: 'Admin email delivery issues',
+        message: `${failedRecipients.length} recipient(s) failed for "${subject}".`,
+        link: '/dashboard/emails',
+        data: { adminEmailLogId: log._id.toString() },
+        priority: 'HIGH',
+      });
+    }
+  } catch (notificationError) {
+    logger.warn('Failed to create admin email notifications', notificationError);
   }
 
   return log;

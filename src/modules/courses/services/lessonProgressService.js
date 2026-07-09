@@ -55,6 +55,37 @@ export async function canAccessLessonProgress(user, courseId) {
   return !!enrollment;
 }
 
+export async function getCourseProgressForUser(userId, courseId) {
+  const publishedLessons = await Lesson.find({ courseId, isPublished: true })
+    .select("_id")
+    .sort({ order: 1 })
+    .lean();
+
+  const totalCount = publishedLessons.length;
+  const progressDocs = await LessonProgress.find({ userId, courseId }).lean();
+  const progressByLessonId = new Map(
+    progressDocs.map((doc) => [doc.lessonId.toString(), doc])
+  );
+
+  const lessons = publishedLessons.map((lesson) => {
+    const doc = progressByLessonId.get(lesson._id.toString());
+    return {
+      lessonId: lesson._id.toString(),
+      completed: doc?.completed ?? false,
+      completedStepIds: doc?.completedStepIds ?? [],
+      completedAt: doc?.completedAt ?? null,
+    };
+  });
+
+  const completedCount = lessons.filter((lesson) => lesson.completed).length;
+  const progressPct =
+    totalCount === 0
+      ? 0
+      : Math.min(100, Math.round((completedCount / totalCount) * 100));
+
+  return { progressPct, completedCount, totalCount, lessons };
+}
+
 export async function syncEnrollmentProgressFromLessons(userId, courseId) {
   const enrollment = await Enrollment.findOne({
     userId,
@@ -63,15 +94,11 @@ export async function syncEnrollmentProgressFromLessons(userId, courseId) {
   });
   if (!enrollment) return;
 
-  const total = await Lesson.countDocuments({ courseId, isPublished: true });
-  if (total === 0) return;
-
-  const completed = await LessonProgress.countDocuments({
+  const { progressPct: pct, totalCount } = await getCourseProgressForUser(
     userId,
-    courseId,
-    completed: true,
-  });
-  const pct = Math.min(100, Math.round((completed / total) * 100));
+    courseId
+  );
+  if (totalCount === 0) return;
   const previousStatus = enrollment.status;
   enrollment.progressPct = pct;
   enrollment.lastAccessedAt = new Date();

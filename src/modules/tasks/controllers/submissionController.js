@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { Task } from "../models/Task.js";
 import { TaskSubmission } from "../models/TaskSubmission.js";
 import { Course } from "../../courses/models/Course.js";
+import { createNotification } from "../../notifications/services/notificationService.js";
 import {
   successResponse,
   errorResponse,
@@ -11,6 +12,7 @@ import {
 } from "../../../utils/response.js";
 import { logger } from "../../../utils/logger.js";
 import { canAccessLessonProgress } from "../../courses/services/lessonProgressService.js";
+import { createNotification } from "../../notifications/services/notificationService.js";
 
 function isNonEmptyString(v) {
   return typeof v === "string" && v.trim().length > 0;
@@ -72,6 +74,8 @@ export const createSubmission = async (req, res) => {
       return notFoundResponse(res, "Task");
     }
 
+    const course = await Course.findById(task.courseId).select("ownerId title");
+
     const allowed = await canAccessLessonProgress(req.user, task.courseId);
     if (!allowed) {
       return forbiddenResponse(res, "You cannot submit for this task");
@@ -131,6 +135,28 @@ export const createSubmission = async (req, res) => {
     } else {
       submission = await TaskSubmission.create(payload);
       created = true;
+    }
+
+    if (course?.ownerId) {
+      try {
+        await createNotification({
+          userId: course.ownerId,
+          type: "TASK_SUBMISSION",
+          title: "New task submission",
+          message: `${req.user.name} submitted "${task.title}".`,
+          link: `/dashboard/courses/${task.courseId}/learn?lesson=${task.lessonId}`,
+          data: {
+            taskId: task._id.toString(),
+            submissionId: submission._id.toString(),
+            courseId: task.courseId.toString(),
+            lessonId: task.lessonId.toString(),
+            participantId: req.user._id.toString(),
+          },
+          priority: "MEDIUM",
+        });
+      } catch (notificationError) {
+        logger.error("Failed to send task submission notification:", notificationError);
+      }
     }
 
     return successResponse(
@@ -257,6 +283,25 @@ export const reviewSubmission = async (req, res) => {
     submission.reviewedBy = req.user._id;
     submission.reviewedAt = new Date();
     await submission.save();
+
+    try {
+      await createNotification({
+        userId: submission.userId,
+        type: "TASK_REVIEWED",
+        title: "Task reviewed",
+        message: `Your submission for "${task.title}" has been reviewed.`,
+        link: `/dashboard/courses/${submission.courseId}/learn?lesson=${task.lessonId}`,
+        data: {
+          taskId: task._id.toString(),
+          submissionId: submission._id.toString(),
+          courseId: submission.courseId.toString(),
+          lessonId: task.lessonId.toString(),
+        },
+        priority: "MEDIUM",
+      });
+    } catch (notificationError) {
+      logger.error("Failed to send task reviewed notification:", notificationError);
+    }
 
     return successResponse(
       res,

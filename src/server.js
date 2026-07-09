@@ -26,6 +26,7 @@ import analyticsRoutes from "./modules/analytics/routes/analytics.js";
 import assessmentRoutes from "./modules/assessments/routes/assessments.js";
 import courseMaterialRoutes from "./modules/courses/routes/courseMaterials.js";
 import announcementRoutes from "./modules/announcements/routes/announcements.js";
+import notificationRoutes from "./modules/notifications/routes/notifications.js";
 import taskRoutes from "./modules/tasks/routes/tasks.js";
 import submissionRoutes from "./modules/tasks/routes/submissions.js";
 import { initSocket } from "./socket/index.js";
@@ -129,6 +130,7 @@ app.use("/api/v1/analytics", analyticsRoutes);
 app.use("/api/v1/assessments", assessmentRoutes);
 app.use("/api/v1/course-materials", courseMaterialRoutes);
 app.use("/api/v1/announcements", announcementRoutes);
+app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/tasks", taskRoutes);
 app.use("/api/v1/submissions", submissionRoutes);
 

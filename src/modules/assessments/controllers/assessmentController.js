@@ -1,6 +1,7 @@
 import { Assessment } from '../models/Assessment.js';
 import { AssessmentSubmission } from '../models/AssessmentSubmission.js';
 import { Course } from '../../courses/models/Course.js';
+import { createNotification } from '../../notifications/services/notificationService.js';
 import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
 import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
@@ -416,6 +417,42 @@ export const submitAssessment = async (req, res) => {
     }
 
     await submission.save();
+
+    try {
+      const course = await Course.findById(courseId).select('ownerId title');
+      if (assessment.isAutoGraded) {
+        await createNotification({
+          userId,
+          type: 'ASSESSMENT_RESULT',
+          title: 'Assessment graded',
+          message: `Your "${assessment.title}" result is ready. Score: ${submission.percentage ?? 0}%.`,
+          link: `/dashboard/courses/${courseId}/assessments/${assessmentId}/results`,
+          data: {
+            assessmentId: assessmentId.toString(),
+            courseId: courseId.toString(),
+            submissionId: submission._id.toString(),
+          },
+          priority: 'MEDIUM',
+        });
+      } else if (course?.ownerId) {
+        await createNotification({
+          userId: course.ownerId,
+          type: 'ASSESSMENT_RESULT',
+          title: 'Assessment needs review',
+          message: `${req.user.name} submitted "${assessment.title}" for manual review.`,
+          link: `/dashboard/courses/${courseId}/assessments/${assessmentId}/results`,
+          data: {
+            assessmentId: assessmentId.toString(),
+            courseId: courseId.toString(),
+            submissionId: submission._id.toString(),
+            participantId: userId.toString(),
+          },
+          priority: 'HIGH',
+        });
+      }
+    } catch (notificationError) {
+      logger.error('Failed to send assessment notifications:', notificationError);
+    }
 
     return successResponse(res, { 
       submission: submission.getSummary(),

@@ -35,7 +35,31 @@ const lessonSchema = new mongoose.Schema({
   content: {
     type: String,
     trim: true,
-    maxlength: [10000, 'Lesson content cannot exceed 10000 characters'],
+    maxlength: [50000, 'Lesson content cannot exceed 50000 characters'],
+  },
+  interactiveConfig: {
+    introduction: {
+      type: String,
+      trim: true,
+      maxlength: [2000, 'Introduction cannot exceed 2000 characters'],
+      default: '',
+    },
+    steps: [{
+      id: { type: String, required: true },
+      title: {
+        type: String,
+        required: true,
+        trim: true,
+        maxlength: [200, 'Step title cannot exceed 200 characters'],
+      },
+      description: {
+        type: String,
+        trim: true,
+        maxlength: [2000, 'Step description cannot exceed 2000 characters'],
+        default: '',
+      },
+      order: { type: Number, required: true, min: 0 },
+    }],
   },
   media: {
     publicId: String,
@@ -120,6 +144,17 @@ lessonSchema.index({ courseId: 1 });
 lessonSchema.index({ type: 1 });
 lessonSchema.index({ isPublished: 1 });
 lessonSchema.index({ order: 1 });
+
+// Pre-save middleware to validate interactive lessons
+lessonSchema.pre('save', function validateInteractiveLesson(next) {
+  if (this.type === 'INTERACTIVE') {
+    const steps = this.interactiveConfig?.steps || [];
+    if (!steps.length) {
+      return next(new Error('Interactive lessons require at least one step'));
+    }
+  }
+  next();
+});
 
 // Pre-save middleware to validate order uniqueness
 lessonSchema.pre('save', async function(next) {

@@ -3,6 +3,7 @@ import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 import { authenticateSocket } from "./auth.js";
 import { registerCohortChatHandlers } from "./cohortChatHandlers.js";
+import { userRoom } from "../modules/notifications/services/notificationService.js";
 
 let ioInstance = null;
 
@@ -29,6 +30,7 @@ export function initSocket(httpServer) {
 
   io.on("connection", (socket) => {
     logger.info(`Socket connected: ${socket.user._id} (${socket.user.role})`);
+    socket.join(userRoom(socket.user._id));
     registerCohortChatHandlers(io, socket);
 
     socket.on("disconnect", (reason) => {

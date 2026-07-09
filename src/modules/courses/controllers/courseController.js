@@ -8,6 +8,7 @@ import {
   assertObjectIds,
   getLessonInCourse,
   canAccessLessonProgress,
+  getCourseProgressForUser,
   syncEnrollmentProgressFromLessons,
 } from "../services/lessonProgressService.js";
 import { assertRequiredTasksSubmitted } from "../../tasks/services/taskCompletionService.js";
@@ -646,6 +647,30 @@ export const updateLesson = async (req, res) => {
 
     const updates = req.body;
 
+    if (lesson.type === "TEXT" && updates.content !== undefined) {
+      const text = String(updates.content || "")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .trim();
+      if (!text || text.length < 20) {
+        return errorResponse(
+          res,
+          new Error("Text lessons require at least 20 characters of content"),
+          400
+        );
+      }
+    }
+
+    if (lesson.type === "INTERACTIVE" && updates.interactiveConfig !== undefined) {
+      if (!updates.interactiveConfig?.steps?.length) {
+        return errorResponse(
+          res,
+          new Error("Interactive lessons require at least one step"),
+          400
+        );
+      }
+    }
+
     // Handle YouTube video ID validation if provided
     if (updates.youtubeVideoId) {
       const { isValidYouTubeVideoId } = await import(
@@ -751,13 +776,53 @@ export const completeLesson = async (req, res) => {
 
     await syncEnrollmentProgressFromLessons(req.user._id, courseId);
 
+    const courseProgress = await getCourseProgressForUser(
+      req.user._id,
+      courseId
+    );
+
     return successResponse(
       res,
-      { progress },
+      {
+        progress,
+        progressPct: courseProgress.progressPct,
+        completedCount: courseProgress.completedCount,
+        totalCount: courseProgress.totalCount,
+      },
       "Lesson marked as complete"
     );
   } catch (error) {
     logger.error("Complete lesson error:", error);
+    return errorResponse(res, error);
+  }
+};
+
+// GET /courses/:courseId/progress - Get bulk course progress for current user
+export const getCourseProgress = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+
+    try {
+      assertObjectIds(courseId);
+    } catch (e) {
+      const handled = handleLessonProgressParamError(res, e);
+      if (handled) return handled;
+      throw e;
+    }
+
+    const allowed = await canAccessLessonProgress(req.user, courseId);
+    if (!allowed) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    const courseProgress = await getCourseProgressForUser(
+      req.user._id,
+      courseId
+    );
+
+    return successResponse(res, courseProgress, "Course progress retrieved");
+  } catch (error) {
+    logger.error("Get course progress error:", error);
     return errorResponse(res, error);
   }
 };
@@ -792,12 +857,14 @@ export const getLessonProgress = async (req, res) => {
           timeSpentSec: doc.timeSpentSec,
           lastAccessedAt: doc.lastAccessedAt,
           completedAt: doc.completedAt,
+          completedStepIds: doc.completedStepIds || [],
         }
       : {
           completed: false,
           timeSpentSec: 0,
           lastAccessedAt: null,
           completedAt: null,
+          completedStepIds: [],
         };
 
     return successResponse(
@@ -815,7 +882,7 @@ export const getLessonProgress = async (req, res) => {
 export const updateLessonProgress = async (req, res) => {
   try {
     const { courseId, lessonId } = req.params;
-    const { additionalTimeSec = 0 } = req.body;
+    const { additionalTimeSec = 0, completedStepIds } = req.body;
 
     try {
       assertObjectIds(courseId, lessonId);
@@ -833,13 +900,18 @@ export const updateLessonProgress = async (req, res) => {
 
     const inc = Math.max(0, Number(additionalTimeSec) || 0);
     const now = new Date();
+    const update = {
+      $set: { courseId, lastAccessedAt: now },
+      $inc: { timeSpentSec: inc },
+    };
+
+    if (Array.isArray(completedStepIds)) {
+      update.$set.completedStepIds = completedStepIds;
+    }
 
     const progress = await LessonProgress.findOneAndUpdate(
       { userId: req.user._id, lessonId },
-      {
-        $set: { courseId, lastAccessedAt: now },
-        $inc: { timeSpentSec: inc },
-      },
+      update,
       { new: true, upsert: true, runValidators: true }
     );
 
@@ -851,6 +923,7 @@ export const updateLessonProgress = async (req, res) => {
           timeSpentSec: progress.timeSpentSec,
           lastAccessedAt: progress.lastAccessedAt,
           completedAt: progress.completedAt,
+          completedStepIds: progress.completedStepIds || [],
         },
       },
       "Lesson progress updated successfully"
@@ -1331,6 +1404,7 @@ export const createLesson = async (req, res) => {
       title,
       type,
       content,
+      interactiveConfig,
       youtubeVideoId,
       externalUrl,
       order,
@@ -1390,6 +1464,7 @@ export const createLesson = async (req, res) => {
       title,
       type,
       content,
+      interactiveConfig,
       youtubeVideoId,
       externalUrl,
       order: lessonOrder,

@@ -3,6 +3,7 @@ import { Course } from '../../courses/models/Course.js';
 import { User } from '../../users/models/User.js';
 import { sendEnrollmentEmail } from '../../../config/email.js';
 import { notifyEnrollmentCompletedIfNeeded } from '../services/enrollmentNotificationService.js';
+import { createNotification } from '../../notifications/services/notificationService.js';
 import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } from '../../../utils/response.js';
 import { getPaginationParams, createPaginationResult } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
@@ -182,6 +183,36 @@ export const enrollInCourse = async (req, res) => {
       await sendEnrollmentEmail(req.user, course);
     } catch (emailError) {
       logger.error('Failed to send enrollment email:', emailError);
+    }
+
+    try {
+      await createNotification({
+        userId: req.user._id,
+        type: 'ENROLLMENT',
+        title: 'Enrollment confirmed',
+        message: `You enrolled in "${course.title}".`,
+        link: `/dashboard/courses/${course._id}/learn`,
+        data: { courseId: course._id.toString(), enrollmentId: enrollment._id.toString() },
+        priority: 'MEDIUM',
+      });
+
+      if (course.ownerId) {
+        await createNotification({
+          userId: course.ownerId,
+          type: 'ENROLLMENT',
+          title: 'New course enrollment',
+          message: `${req.user.name} enrolled in "${course.title}".`,
+          link: `/dashboard/courses/${course._id}`,
+          data: {
+            courseId: course._id.toString(),
+            enrollmentId: enrollment._id.toString(),
+            participantId: req.user._id.toString(),
+          },
+          priority: 'MEDIUM',
+        });
+      }
+    } catch (notificationError) {
+      logger.error('Failed to send enrollment notifications:', notificationError);
     }
 
     return successResponse(res, { enrollment: populatedEnrollment }, 'Enrolled successfully', 201);

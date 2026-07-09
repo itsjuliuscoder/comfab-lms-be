@@ -3,6 +3,7 @@ import { User } from '../../users/models/User.js';
 import { generateTokens, verifyRefreshToken } from '../../../middleware/auth.js';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../../config/email.js';
 import { sendUserVerificationEmail } from '../../../utils/emailVerification.js';
+import { notifyAdmins } from '../../notifications/services/notificationService.js';
 import { successResponse, errorResponse, unauthorizedResponse } from '../../../utils/response.js';
 import { logger } from '../../../utils/logger.js';
 
@@ -89,6 +90,19 @@ export const register = async (req, res) => {
       await sendUserVerificationEmail(user);
     } catch (emailError) {
       logger.error('Failed to send verification email:', emailError);
+    }
+
+    try {
+      await notifyAdmins({
+        type: 'SYSTEM',
+        title: 'New user registration',
+        message: `${user.name} (${user.email}) registered as ${user.role}.`,
+        link: '/dashboard/users',
+        data: { userId: user._id.toString() },
+        priority: 'LOW',
+      });
+    } catch (notificationError) {
+      logger.error('Failed to notify admins of registration:', notificationError);
     }
 
     // Return user data without password

@@ -24,6 +24,7 @@ import {
   getLesson,
   updateLesson,
   completeLesson,
+  getCourseProgress,
   getLessonProgress,
   updateLessonProgress,
   createNote,
@@ -112,6 +113,58 @@ const updateCourseSchema = z.object({
   featured: z.boolean().optional(),
 });
 
+const interactiveConfigSchema = z.object({
+  introduction: z.string().max(2000).optional(),
+  steps: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string().min(1).max(200),
+        description: z.string().max(2000).optional(),
+        order: z.number().int().min(0),
+      })
+    )
+    .min(1),
+});
+
+function stripHtmlContent(value) {
+  return String(value || "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+}
+
+function refineLessonPayload(data, ctx) {
+  if (data.type === "TEXT") {
+    const text = stripHtmlContent(data.content);
+    if (!text || text.length < 20) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Text lessons require at least 20 characters of content",
+        path: ["content"],
+      });
+    }
+  }
+
+  if (data.type === "INTERACTIVE") {
+    if (!data.interactiveConfig?.steps?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Interactive lessons require at least one step",
+        path: ["interactiveConfig"],
+      });
+    }
+  }
+
+  if (data.type === "VIDEO" && !String(data.youtubeVideoId || "").trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "YouTube video ID is required for video lessons",
+      path: ["youtubeVideoId"],
+    });
+  }
+}
+
 const updateLessonSchema = z.object({
   title: z
     .string()
@@ -120,8 +173,9 @@ const updateLessonSchema = z.object({
     .optional(),
   content: z
     .string()
-    .max(10000, "Content cannot exceed 10000 characters")
+    .max(50000, "Content cannot exceed 50000 characters")
     .optional(),
+  interactiveConfig: interactiveConfigSchema.optional(),
   youtubeVideoId: z.string().optional(),
   externalUrl: z.string().url("Invalid external URL").optional(),
   durationSec: z
@@ -138,6 +192,7 @@ const updateProgressSchema = z.object({
     .number()
     .min(0, "additionalTimeSec cannot be negative")
     .optional(),
+  completedStepIds: z.array(z.string().min(1)).optional(),
 });
 
 const createNoteSchema = z.object({
@@ -211,37 +266,38 @@ const updateSectionSchema = z.object({
   isPublished: z.boolean().optional(),
 });
 
-const createLessonSchema = z.object({
-  title: z
-    .string()
-    .min(3, "Title must be at least 3 characters")
-    .max(200, "Title cannot exceed 200 characters"),
-  type: z.enum([
-    "TEXT",
-    "VIDEO",
-    "INTERACTIVE",
-    "QUIZ",
-    "ASSIGNMENT",
-    "AUDIO",
-    "RESOURCE",
-    "FILE",
-    "LINK",
-  ]),
-  content: z
-    .string()
-    .max(10000, "Content cannot exceed 10000 characters")
-    .optional(),
-  youtubeVideoId: z.string().optional(),
-  externalUrl: z.string().url("Invalid external URL").optional(),
-  order: z.number().min(1, "Order must be at least 1").optional(),
-  durationSec: z
-    .number()
-    .min(1, "Duration must be at least 1 second")
-    .optional(),
-  isPublished: z.boolean().optional(),
-  isFree: z.boolean().optional(),
-  notes: z.string().max(1000, "Notes cannot exceed 1000 characters").optional(),
-});
+const createLessonSchema = z
+  .object({
+    title: z
+      .string()
+      .min(3, "Title must be at least 3 characters")
+      .max(200, "Title cannot exceed 200 characters"),
+    type: z.enum([
+      "TEXT",
+      "VIDEO",
+      "INTERACTIVE",
+      "AUDIO",
+      "RESOURCE",
+      "FILE",
+      "LINK",
+    ]),
+    content: z
+      .string()
+      .max(50000, "Content cannot exceed 50000 characters")
+      .optional(),
+    interactiveConfig: interactiveConfigSchema.optional(),
+    youtubeVideoId: z.string().optional(),
+    externalUrl: z.string().url("Invalid external URL").optional(),
+    order: z.number().min(1, "Order must be at least 1").optional(),
+    durationSec: z
+      .number()
+      .min(1, "Duration must be at least 1 second")
+      .optional(),
+    isPublished: z.boolean().optional(),
+    isFree: z.boolean().optional(),
+    notes: z.string().max(1000, "Notes cannot exceed 1000 characters").optional(),
+  })
+  .superRefine(refineLessonPayload);
 
 // Course Routes
 router.get("/", optionalAuth, asyncHandler(getAllCourses));
@@ -268,6 +324,7 @@ router.delete(
 );
 router.post("/:id/publish", requireAuth, requireInstructor, asyncHandler(publishCourse));
 router.post("/:id/unpublish", requireAuth, requireInstructor, asyncHandler(unpublishCourse));
+router.get("/:courseId/progress", requireAuth, asyncHandler(getCourseProgress));
 
 // Section Routes
 router.get("/:id/sections", optionalAuth, asyncHandler(getCourseSections));

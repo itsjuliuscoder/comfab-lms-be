@@ -3,6 +3,7 @@ import {
   createCohortMessage,
   validateMessageContent,
 } from "../modules/cohort-chat/services/cohortChatService.js";
+import { notifyCohortMentions } from "../modules/notifications/services/cohortMentionNotificationService.js";
 import { logger } from "../utils/logger.js";
 
 const cohortRoom = (cohortId) => `cohort:${cohortId}`;
@@ -77,6 +78,13 @@ export function registerCohortChatHandlers(io, socket) {
 
       const payload = message.toChatPayload();
       io.to(cohortRoom(id)).emit("cohort:message:new", payload);
+
+      await notifyCohortMentions({
+        cohortId: id,
+        content: validation.content,
+        sender: socket.user,
+        messageId: message._id,
+      });
     } catch (error) {
       logger.error("cohort:message:send error:", error);
       emitError("SEND_FAILED", error.message || "Failed to send message");

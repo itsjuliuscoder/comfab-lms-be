@@ -565,6 +565,17 @@ describe("courseController", () => {
           type: "INTERACTIVE",
           durationSec: 600,
           isPublished: true,
+          interactiveConfig: {
+            introduction: "Follow each step",
+            steps: [
+              {
+                id: "step-1",
+                title: "Review the prompt",
+                description: "Read the scenario carefully",
+                order: 0,
+              },
+            ],
+          },
         },
         user: { _id: "owner-1", role: "INSTRUCTOR" },
       },
@@ -574,6 +585,11 @@ describe("courseController", () => {
     expect(mocked.Lesson).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "INTERACTIVE",
+        interactiveConfig: expect.objectContaining({
+          steps: expect.arrayContaining([
+            expect.objectContaining({ title: "Review the prompt" }),
+          ]),
+        }),
       })
     );
     expect(res.status).toHaveBeenCalledWith(201);

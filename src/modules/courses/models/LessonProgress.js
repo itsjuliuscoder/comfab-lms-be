@@ -34,6 +34,10 @@ const lessonProgressSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    completedStepIds: [{
+      type: String,
+      trim: true,
+    }],
   },
   {
     timestamps: true,

@@ -6,6 +6,7 @@ import { successResponse, errorResponse, notFoundResponse, forbiddenResponse } f
 import { getPaginationParams } from '../../../utils/pagination.js';
 import { logger } from '../../../utils/logger.js';
 import { sendAnnouncementEmails } from '../services/announcementEmailService.js';
+import { notifyAnnouncementPublished } from '../../notifications/services/announcementNotificationService.js';
 
 // GET /announcements - Get announcements for current user
 export const getAnnouncements = async (req, res) => {
@@ -183,6 +184,7 @@ export const createAnnouncement = async (req, res) => {
       } catch (emailError) {
         logger.error('Failed to send announcement emails:', emailError);
       }
+      await notifyAnnouncementPublished(announcement);
     }
 
     return successResponse(res, announcement, 'Announcement created successfully', 201);
@@ -252,6 +254,7 @@ export const updateAnnouncement = async (req, res) => {
       } catch (emailError) {
         logger.error('Failed to send announcement emails:', emailError);
       }
+      await notifyAnnouncementPublished(updatedAnnouncement);
     }
 
     return successResponse(res, updatedAnnouncement, 'Announcement updated successfully');
