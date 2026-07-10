@@ -71,6 +71,8 @@ export function parseRecipientsFromSpreadsheet(fileBuffer) {
 
   const emails = [];
   const errors = [];
+  const seenEmails = new Set();
+  let duplicateCount = 0;
 
   for (let i = 1; i < jsonData.length; i += 1) {
     const row = jsonData[i];
@@ -91,12 +93,19 @@ export function parseRecipientsFromSpreadsheet(fileBuffer) {
       continue;
     }
 
+    if (seenEmails.has(email)) {
+      duplicateCount += 1;
+      continue;
+    }
+
+    seenEmails.add(email);
     emails.push(email);
   }
 
   return {
-    emails: dedupeEmails(emails),
+    emails,
     errors,
+    duplicateCount,
     totalRows: jsonData.length - 1,
   };
 }
@@ -151,8 +160,57 @@ export async function collectRecipients({ recipients = [], userIds = [] }) {
   return merged;
 }
 
+export async function previewAdminEmailFromUpload({
+  fileBuffer,
+  recipients = [],
+  userIds = [],
+}) {
+  const parsed = parseRecipientsFromSpreadsheet(fileBuffer);
+  const manualEmails = dedupeEmails(
+    recipients.map(normalizeEmail).filter((email) => email && isValidEmail(email))
+  );
+  const invalidManual = recipients
+    .map(normalizeEmail)
+    .filter((email) => email && !isValidEmail(email));
+
+  if (invalidManual.length > 0) {
+    throw new Error(`Invalid email address(es): ${invalidManual.join(', ')}`);
+  }
+
+  const userEmails = await resolveUserEmails(userIds);
+  const mergedRecipients = dedupeEmails([...parsed.emails, ...manualEmails, ...userEmails]);
+  const crossSourceDuplicateCount =
+    parsed.emails.length + manualEmails.length + userEmails.length - mergedRecipients.length;
+  const duplicateCount = parsed.duplicateCount + Math.max(0, crossSourceDuplicateCount);
+  const warnings = [];
+
+  if (mergedRecipients.length === 0) {
+    warnings.push('At least one valid recipient is required');
+  }
+
+  if (mergedRecipients.length > MAX_RECIPIENTS_PER_SEND) {
+    warnings.push(`Cannot send to more than ${MAX_RECIPIENTS_PER_SEND} recipients at once`);
+  }
+
+  return {
+    fileRecipientCount: parsed.emails.length,
+    manualRecipientCount: manualEmails.length,
+    lmsRecipientCount: userEmails.length,
+    duplicateCount,
+    recipientCount: mergedRecipients.length,
+    validEmails: mergedRecipients,
+    parseErrors: parsed.errors,
+    warnings,
+  };
+}
+
 function buildBodyPreview(body) {
   return String(body || '').trim().slice(0, 200);
+}
+
+function buildEmailSendWarning(error) {
+  const message = error?.message || 'Unknown bookkeeping error';
+  return `Email delivery succeeded, but post-send bookkeeping failed: ${message}`;
 }
 
 async function logAdminEmailSend({
@@ -266,19 +324,41 @@ export async function sendAdminEmail({
     idempotencyPrefix,
   });
 
-  const log = await logAdminEmailSend({
-    adminUser,
-    subject,
-    body,
-    recipients: mergedRecipients,
-    sendResult,
-    idempotencyPrefix,
-  });
+  let log = null;
+  const warnings = [];
+
+  try {
+    log = await logAdminEmailSend({
+      adminUser,
+      subject,
+      body,
+      recipients: mergedRecipients,
+      sendResult,
+      idempotencyPrefix,
+    });
+  } catch (error) {
+    warnings.push(buildEmailSendWarning(error));
+    logger.error(
+      {
+        error: error.message,
+        stack: error.stack,
+        adminUserId: adminUser?._id?.toString(),
+        subject,
+        recipientCount: mergedRecipients.length,
+        sentCount: sendResult.sent || 0,
+        failedCount: sendResult.failed || 0,
+        provider: sendResult.provider || getCurrentProvider(),
+        idempotencyPrefix,
+      },
+      'Admin email bookkeeping failed after provider delivery'
+    );
+  }
 
   return {
     log,
     sendResult,
     recipients: mergedRecipients,
+    warnings,
   };
 }
 
@@ -306,20 +386,42 @@ export async function sendAdminEmailFromUpload({
     idempotencyPrefix,
   });
 
-  const log = await logAdminEmailSend({
-    adminUser,
-    subject,
-    body,
-    recipients: mergedRecipients,
-    sendResult,
-    idempotencyPrefix,
-  });
+  let log = null;
+  const warnings = [];
+
+  try {
+    log = await logAdminEmailSend({
+      adminUser,
+      subject,
+      body,
+      recipients: mergedRecipients,
+      sendResult,
+      idempotencyPrefix,
+    });
+  } catch (error) {
+    warnings.push(buildEmailSendWarning(error));
+    logger.error(
+      {
+        error: error.message,
+        stack: error.stack,
+        adminUserId: adminUser?._id?.toString(),
+        subject,
+        recipientCount: mergedRecipients.length,
+        sentCount: sendResult.sent || 0,
+        failedCount: sendResult.failed || 0,
+        provider: sendResult.provider || getCurrentProvider(),
+        idempotencyPrefix,
+      },
+      'Admin email upload bookkeeping failed after provider delivery'
+    );
+  }
 
   return {
     log,
     sendResult,
     recipients: mergedRecipients,
     parseErrors: parsed.errors,
+    warnings,
   };
 }
 
@@ -338,13 +440,16 @@ export async function getAdminEmailHistory({ page = 1, limit = 20 }) {
     AdminEmailLog.countDocuments(),
   ]);
 
+  const safeLogs = Array.isArray(logs) ? logs : [];
+  const safeTotal = Number.isFinite(Number(total)) ? Number(total) : 0;
+
   return {
-    logs,
+    logs: safeLogs,
     pagination: {
       page: safePage,
       limit: safeLimit,
-      total,
-      totalPages: Math.ceil(total / safeLimit) || 1,
+      total: safeTotal,
+      totalPages: Math.ceil(safeTotal / safeLimit) || 1,
     },
   };
 }

@@ -15,6 +15,7 @@ import {
 import {
   sendAdminEmailHandler,
   bulkUploadAdminEmailHandler,
+  bulkPreviewAdminEmailHandler,
   getAdminEmailHistoryHandler,
   downloadAdminEmailTemplateHandler,
 } from '../controllers/adminEmailController.js';
@@ -116,6 +117,12 @@ router.post('/email/test', validateBody(testEmailSchema), asyncHandler(async (re
 }));
 
 router.post('/email/send', validateBody(sendAdminEmailSchema), asyncHandler(sendAdminEmailHandler));
+
+router.post(
+  '/email/bulk-preview',
+  excelUpload.single('emailFile'),
+  asyncHandler(bulkPreviewAdminEmailHandler)
+);
 
 router.post(
   '/email/bulk-upload',
