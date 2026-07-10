@@ -18,6 +18,7 @@ const notificationSchema = new mongoose.Schema(
         "TASK_REVIEWED",
         "ASSESSMENT_RESULT",
         "COHORT_MENTION",
+        "PROGRAM_MENTION",
         "ADMIN_MESSAGE",
         "SYSTEM",
       ],

@@ -450,6 +450,8 @@ export const completeInvite = async (req, res) => {
     user.inviteTokenExpires = null;
     user.emailVerified = true;
 
+    const assignedProgramId = user.cohortAssignment?.programId || null;
+
     // Add user to cohort if they were assigned one during invitation
     if (user.cohortAssignment && user.cohortAssignment.cohortId) {
       const { UserCohort } = await import('../../cohorts/models/UserCohort.js');
@@ -464,12 +466,23 @@ export const completeInvite = async (req, res) => {
         });
         await userCohort.save();
       }
+    }
 
-      // Clear the cohort assignment after adding to cohort
+    // Clear cohort assignment after processing
+    if (user.cohortAssignment) {
       user.cohortAssignment = null;
     }
 
     await user.save();
+
+    // Enroll in program when invited with a program assignment
+    if (assignedProgramId) {
+      const { enrollUserInProgram } = await import('../../programs/services/programEnrollmentService.js');
+      await enrollUserInProgram(user._id, assignedProgramId, {
+        status: 'ACTIVE',
+        skipCapacityCheck: true,
+      });
+    }
 
     // Generate tokens for immediate login
     const { accessToken, refreshToken } = generateTokens(user._id);

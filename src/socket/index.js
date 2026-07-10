@@ -3,6 +3,7 @@ import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 import { authenticateSocket } from "./auth.js";
 import { registerCohortChatHandlers } from "./cohortChatHandlers.js";
+import { registerProgramChatHandlers } from "./programChatHandlers.js";
 import { userRoom } from "../modules/notifications/services/notificationService.js";
 
 let ioInstance = null;
@@ -32,6 +33,7 @@ export function initSocket(httpServer) {
     logger.info(`Socket connected: ${socket.user._id} (${socket.user.role})`);
     socket.join(userRoom(socket.user._id));
     registerCohortChatHandlers(io, socket);
+    registerProgramChatHandlers(io, socket);
 
     socket.on("disconnect", (reason) => {
       logger.info(`Socket disconnected: ${socket.user._id} (${reason})`);

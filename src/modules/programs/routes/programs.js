@@ -16,6 +16,10 @@ import {
   getProgramStatistics,
   enrollInProgram,
 } from "../controllers/programController.js";
+import {
+  getProgramMessages,
+  deleteProgramMessage,
+} from "../../program-chat/controllers/programChatController.js";
 
 const router = express.Router();
 
@@ -255,6 +259,24 @@ router.get(
 );
 
 router.get("/:id/statistics", requireAuth, asyncHandler(getProgramStatistics));
+
+router.get(
+  "/:id/messages",
+  requireAuth,
+  validateQuery(
+    z.object({
+      page: z.string().optional(),
+      limit: z.string().optional(),
+      before: z.string().optional(),
+    })
+  ),
+  asyncHandler(getProgramMessages)
+);
+router.delete(
+  "/:id/messages/:messageId",
+  requireAuth,
+  asyncHandler(deleteProgramMessage)
+);
 
 // Program enrollment routes
 router.post("/:id/enroll", requireAuth, asyncHandler(enrollInProgram));
