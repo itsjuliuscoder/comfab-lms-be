@@ -35,6 +35,18 @@ function validateBatchEmail(email, index) {
   }
 }
 
+function normalizeBatchResponseData(data) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
+
+  return null;
+}
+
 export const sendBatchWithResend = async (emails, { idempotencyPrefix } = {}) => {
   if (!resend) {
     throw new Error(
@@ -80,7 +92,22 @@ export const sendBatchWithResend = async (emails, { idempotencyPrefix } = {}) =>
       throw new Error(`Resend batch email sending failed: ${error.message}`);
     }
 
-    const chunkResults = (data || []).map((item, itemIndex) => {
+    const normalizedData = normalizeBatchResponseData(data);
+
+    if (!normalizedData) {
+      logger.error(
+        {
+          responseData: data,
+          chunkIndex,
+          chunkSize: chunk.length,
+        },
+        'Unexpected Resend batch response shape'
+      );
+    }
+
+    const responseItems = normalizedData || [];
+    const chunkResults = chunk.map((email, itemIndex) => {
+      const item = responseItems[itemIndex];
       const recipient = Array.isArray(chunk[itemIndex]?.to)
         ? chunk[itemIndex].to[0]
         : chunk[itemIndex]?.to;
@@ -99,7 +126,9 @@ export const sendBatchWithResend = async (emails, { idempotencyPrefix } = {}) =>
       return {
         success: false,
         email: recipient,
-        error: 'No message id returned from Resend',
+        error: normalizedData
+          ? 'No message id returned from Resend'
+          : 'Unexpected Resend batch response shape',
         provider: 'resend',
       };
     });

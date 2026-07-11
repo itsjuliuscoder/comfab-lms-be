@@ -168,7 +168,9 @@ describe("resend config", () => {
 
   it("sends batch emails in chunks of 100 with idempotency keys", async () => {
     mocked.batchSend.mockImplementation(async (chunk, options) => ({
-      data: chunk.map((email) => ({ id: `id-${email.to[0]}` })),
+      data: {
+        data: chunk.map((email) => ({ id: `id-${email.to[0]}` })),
+      },
       error: null,
       options,
     }));
@@ -195,5 +197,83 @@ describe("resend config", () => {
     expect(result.sent).toBe(101);
     expect(result.failed).toBe(0);
     expect(result.results).toHaveLength(101);
+  });
+
+  it("supports legacy raw-array batch response data", async () => {
+    mocked.batchSend.mockImplementation(async (chunk) => ({
+      data: chunk.map((email) => ({ id: `id-${email.to[0]}` })),
+      error: null,
+    }));
+
+    const recipients = [
+      {
+        from: "CONFAB <noreply@theconfab.org>",
+        to: ["jane@example.com"],
+        subject: "Hello",
+        html: "<p>Hello</p>",
+        text: "Hello",
+      },
+    ];
+
+    const result = await sendBatchWithResend(recipients);
+
+    expect(result).toEqual({
+      success: true,
+      sent: 1,
+      failed: 0,
+      results: [
+        {
+          success: true,
+          email: "jane@example.com",
+          messageId: "id-jane@example.com",
+          provider: "resend",
+        },
+      ],
+      provider: "resend",
+    });
+  });
+
+  it("reports failures instead of crashing on unexpected batch response data", async () => {
+    mocked.batchSend.mockResolvedValue({
+      data: { id: "batch_without_items" },
+      error: null,
+    });
+
+    const recipients = [
+      {
+        from: "CONFAB <noreply@theconfab.org>",
+        to: ["jane@example.com"],
+        subject: "Hello",
+        html: "<p>Hello</p>",
+        text: "Hello",
+      },
+      {
+        from: "CONFAB <noreply@theconfab.org>",
+        to: ["john@example.com"],
+        subject: "Hello",
+        html: "<p>Hello</p>",
+        text: "Hello",
+      },
+    ];
+
+    const result = await sendBatchWithResend(recipients);
+
+    expect(result.success).toBe(false);
+    expect(result.sent).toBe(0);
+    expect(result.failed).toBe(2);
+    expect(result.results).toEqual([
+      {
+        success: false,
+        email: "jane@example.com",
+        error: "Unexpected Resend batch response shape",
+        provider: "resend",
+      },
+      {
+        success: false,
+        email: "john@example.com",
+        error: "Unexpected Resend batch response shape",
+        provider: "resend",
+      },
+    ]);
   });
 });
