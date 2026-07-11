@@ -10,10 +10,12 @@ import {
   canDeleteProgramMessage,
 } from "../services/programChatAccess.js";
 import {
+  createProgramMessage,
   listProgramMessages,
   softDeleteProgramMessage,
 } from "../services/programChatService.js";
 import { getIO } from "../../../socket/index.js";
+import { notifyProgramMentions } from "../../notifications/services/programMentionNotificationService.js";
 
 export const getProgramMessages = async (req, res) => {
   try {
@@ -28,6 +30,46 @@ export const getProgramMessages = async (req, res) => {
     return successResponse(res, result, "Messages retrieved successfully");
   } catch (error) {
     logger.error("Get program messages error:", error);
+    return errorResponse(res, error);
+  }
+};
+
+export const createProgramChatMessage = async (req, res) => {
+  try {
+    const programId = req.params.id;
+    const access = await canAccessProgramChat(req.user, programId);
+
+    if (!access.allowed) {
+      return forbiddenResponse(res, access.reason);
+    }
+
+    const message = await createProgramMessage({
+      programId,
+      authorId: req.user._id,
+      content: req.body?.content,
+    });
+    const payload = message.toChatPayload();
+
+    const io = getIO();
+    if (io) {
+      io.to(`program:${programId}`).emit("program:message:new", payload);
+    }
+
+    notifyProgramMentions({
+      programId,
+      content: payload.content,
+      sender: req.user,
+      messageId: message._id,
+    }).catch((error) => {
+      logger.error("Program message mention notification error:", error);
+    });
+
+    return successResponse(res, payload, "Message sent successfully", 201);
+  } catch (error) {
+    if (error.statusCode) {
+      return errorResponse(res, error, error.statusCode);
+    }
+    logger.error("Create program message error:", error);
     return errorResponse(res, error);
   }
 };

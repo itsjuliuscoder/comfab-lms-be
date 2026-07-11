@@ -18,6 +18,7 @@ import {
 } from "../controllers/programController.js";
 import {
   getProgramMessages,
+  createProgramChatMessage,
   deleteProgramMessage,
 } from "../../program-chat/controllers/programChatController.js";
 
@@ -197,6 +198,10 @@ const updateProgramSchema = z.object({
     .optional(),
 });
 
+const programMessageSchema = z.object({
+  content: z.string().min(1, "Message content is required").max(2000),
+});
+
 // Public routes (no authentication required)
 router.get(
   "/",
@@ -271,6 +276,12 @@ router.get(
     })
   ),
   asyncHandler(getProgramMessages)
+);
+router.post(
+  "/:id/messages",
+  requireAuth,
+  validateBody(programMessageSchema),
+  asyncHandler(createProgramChatMessage)
 );
 router.delete(
   "/:id/messages/:messageId",
