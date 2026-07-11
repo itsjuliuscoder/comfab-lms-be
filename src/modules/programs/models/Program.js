@@ -345,4 +345,5 @@ programSchema.statics.findEnrollmentOpen = function () {
 // Export the model
 const Program = mongoose.model("Program", programSchema);
 
+export { Program };
 export default Program;

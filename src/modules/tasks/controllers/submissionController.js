@@ -12,7 +12,6 @@ import {
 } from "../../../utils/response.js";
 import { logger } from "../../../utils/logger.js";
 import { canAccessLessonProgress } from "../../courses/services/lessonProgressService.js";
-import { createNotification } from "../../notifications/services/notificationService.js";
 
 function isNonEmptyString(v) {
   return typeof v === "string" && v.trim().length > 0;
