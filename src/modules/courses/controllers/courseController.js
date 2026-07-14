@@ -715,6 +715,9 @@ export const publishCourse = async (req, res) => {
       return forbiddenResponse(res, "Access denied");
     }
 
+    const calculatedDuration = await calculateCourseDuration(course._id || req.params.id);
+    course.estimatedDuration =
+      calculatedDuration >= 1 ? calculatedDuration : null;
     course.status = "PUBLISHED";
     await course.save();
     await course.populate("ownerId", "name email");

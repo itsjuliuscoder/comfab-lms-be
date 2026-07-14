@@ -528,16 +528,24 @@ describe("courseController", () => {
 
   it("publishes and unpublishes a course", async () => {
     const course = {
+      _id: "course-1",
       ownerId: { toString: () => "owner-1" },
       status: "DRAFT",
       publishedAt: null,
+      estimatedDuration: 0,
       save: vi.fn().mockResolvedValue(undefined),
       populate: vi.fn().mockResolvedValue(undefined),
       toObject() {
-        return { id: "course-1", title: "AI Masterclass", status: this.status };
+        return {
+          id: "course-1",
+          title: "AI Masterclass",
+          status: this.status,
+          estimatedDuration: this.estimatedDuration,
+        };
       },
     };
     mocked.Course.findById.mockResolvedValue(course);
+    mocked.Section.find.mockResolvedValue([]);
 
     const publishRes = createRes();
     await publishCourse(
@@ -545,6 +553,7 @@ describe("courseController", () => {
       publishRes
     );
     expect(course.status).toBe("PUBLISHED");
+    expect(course.estimatedDuration).toBeNull();
 
     const unpublishRes = createRes();
     await unpublishCourse(
