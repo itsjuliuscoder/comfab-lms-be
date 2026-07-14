@@ -23,11 +23,17 @@ function inviteValidationErrorResponse(res, error) {
   return null;
 }
 
-async function buildInviteAssignment({ role, cohortId, programId, roleInCohort = 'MEMBER' }) {
+async function buildInviteAssignment({
+  role,
+  cohortId,
+  programId,
+  roleInCohort = 'MEMBER',
+  skipCohortCapacityCheck = false,
+}) {
   validateInviteAssignment({ role, cohortId, programId });
   const inviteContext = await resolveInviteContext({ role, cohortId, programId });
 
-  if (cohortId) {
+  if (cohortId && !skipCohortCapacityCheck) {
     const { Cohort } = await import('../../cohorts/models/Cohort.js');
     const cohort = await Cohort.findById(cohortId);
     if (cohort?.isFull()) {
@@ -56,6 +62,105 @@ function parseSendInvitationEmailFlag(value, defaultValue = true) {
     return value;
   }
   return String(value).toLowerCase() !== 'false';
+}
+
+async function assignUserToCohort(userId, cohortId, roleInCohort = 'MEMBER') {
+  if (!cohortId) {
+    return { membership: null, isNew: false };
+  }
+
+  const { UserCohort } = await import('../../cohorts/models/UserCohort.js');
+  let membership = await UserCohort.findOne({ userId, cohortId });
+
+  if (membership) {
+    let changed = false;
+    if (membership.status !== 'ACTIVE') {
+      membership.status = 'ACTIVE';
+      membership.graduatedAt = null;
+      changed = true;
+    }
+    if (roleInCohort && membership.roleInCohort !== roleInCohort) {
+      membership.roleInCohort = roleInCohort;
+      changed = true;
+    }
+    if (changed) {
+      await membership.save();
+    }
+    return { membership, isNew: false };
+  }
+
+  membership = new UserCohort({
+    userId,
+    cohortId,
+    roleInCohort,
+  });
+  await membership.save();
+
+  return { membership, isNew: true };
+}
+
+async function assignExistingParticipantToProgram({
+  existingUser,
+  requestedRole,
+  cohortId,
+  programId,
+  roleInCohort,
+}) {
+  if (requestedRole !== 'PARTICIPANT' || existingUser.role !== 'PARTICIPANT') {
+    const error = new Error(
+      'This email already belongs to a user with a different role'
+    );
+    error.code = 'EXISTING_USER_ROLE_CONFLICT';
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const { assignment } = await buildInviteAssignment({
+    role: requestedRole,
+    cohortId,
+    programId,
+    roleInCohort,
+    skipCohortCapacityCheck: true,
+  });
+
+  const { enrollUserInProgram } = await import(
+    '../../programs/services/programEnrollmentService.js'
+  );
+  const programAssignment = await enrollUserInProgram(
+    existingUser._id,
+    assignment.programId,
+    {
+      status: 'ACTIVE',
+      skipCapacityCheck: true,
+    }
+  );
+
+  const cohortAssignment = await assignUserToCohort(
+    existingUser._id,
+    assignment.cohortId,
+    assignment.roleInCohort || roleInCohort
+  );
+
+  return {
+    user: existingUser,
+    programAssignment,
+    cohortAssignment,
+    wasAlreadyAssigned:
+      !programAssignment.isNew && !cohortAssignment.isNew,
+  };
+}
+
+function existingUserAssignmentErrorResponse(res, error) {
+  if (error.code === 'EXISTING_USER_ROLE_CONFLICT') {
+    return res.status(error.statusCode || 400).json({
+      ok: false,
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
+  return inviteValidationErrorResponse(res, error);
 }
 
 // GET /users/profile - Get current user profile
@@ -528,13 +633,36 @@ export const inviteUser = async (req, res) => {
     // Check if user already exists
     const existingUser = await User.findByEmail(email);
     if (existingUser) {
-      return res.status(400).json({
-        ok: false,
-        error: {
-          code: 'USER_EXISTS',
-          message: 'User with this email already exists',
-        },
-      });
+      try {
+        const assignmentResult = await assignExistingParticipantToProgram({
+          existingUser,
+          requestedRole: role,
+          cohortId,
+          programId,
+          roleInCohort,
+        });
+
+        const userData = existingUser.toPublicJSON
+          ? existingUser.toPublicJSON()
+          : existingUser;
+        const message = assignmentResult.wasAlreadyAssigned
+          ? 'Participant is already assigned to this program and cohort.'
+          : 'Existing participant assigned to program successfully.';
+
+        return successResponse(res, {
+          user: userData,
+          assigned: true,
+          alreadyAssigned: assignmentResult.wasAlreadyAssigned,
+          message,
+        }, message, 200);
+      } catch (assignmentError) {
+        const assignmentResponse = existingUserAssignmentErrorResponse(
+          res,
+          assignmentError
+        );
+        if (assignmentResponse) return assignmentResponse;
+        throw assignmentError;
+      }
     }
 
     let inviteContext;
@@ -622,11 +750,29 @@ export const bulkInviteUsers = async (req, res) => {
         // Check if user already exists
         const existingUser = await User.findByEmail(email);
         if (existingUser) {
-          results.skipped.push({
-            email,
-            reason: 'User already exists',
-            name,
-          });
+          try {
+            const assignmentResult = await assignExistingParticipantToProgram({
+              existingUser,
+              requestedRole: role,
+              cohortId,
+              programId,
+              roleInCohort: userRoleInCohort,
+            });
+            results.successful.push({
+              email,
+              name: existingUser.name || name,
+              role: existingUser.role,
+              userId: existingUser._id,
+              assignedExistingUser: true,
+              alreadyAssigned: assignmentResult.wasAlreadyAssigned,
+            });
+          } catch (assignmentError) {
+            results.failed.push({
+              email,
+              reason: assignmentError.message || 'Failed to assign existing user',
+              name,
+            });
+          }
           continue;
         }
 
@@ -829,11 +975,29 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
         // Check if user already exists
         const existingUser = await User.findByEmail(email);
         if (existingUser) {
-          results.skipped.push({
-            email,
-            reason: 'User already exists',
-            name,
-          });
+          try {
+            const assignmentResult = await assignExistingParticipantToProgram({
+              existingUser,
+              requestedRole: role,
+              cohortId,
+              programId,
+              roleInCohort: userRoleInCohort,
+            });
+            results.successful.push({
+              email,
+              name: existingUser.name || name,
+              role: existingUser.role,
+              userId: existingUser._id,
+              assignedExistingUser: true,
+              alreadyAssigned: assignmentResult.wasAlreadyAssigned,
+            });
+          } catch (assignmentError) {
+            results.failed.push({
+              email,
+              reason: assignmentError.message || 'Failed to assign existing user',
+              name,
+            });
+          }
           continue;
         }
 
