@@ -35,11 +35,20 @@ const mocked = vi.hoisted(() => {
   LessonNote.findOneAndUpdate = vi.fn();
   LessonNote.findOneAndDelete = vi.fn();
 
+  const InteractiveStepSubmission = {
+    find: vi.fn(),
+    findOneAndUpdate: vi.fn(),
+  };
+
   return {
     Course,
     Section,
     Lesson,
     LessonNote,
+    InteractiveStepSubmission,
+    LessonProgress: {
+      findOneAndUpdate: vi.fn(),
+    },
     Cohort: {
       find: vi.fn(),
     },
@@ -68,6 +77,27 @@ vi.mock("../models/LessonNote.js", () => ({
   LessonNote: mocked.LessonNote,
 }));
 
+vi.mock("../models/InteractiveStepSubmission.js", () => ({
+  InteractiveStepSubmission: mocked.InteractiveStepSubmission,
+}));
+
+vi.mock("../models/LessonProgress.js", () => ({
+  LessonProgress: mocked.LessonProgress,
+}));
+
+vi.mock("../services/lessonProgressService.js", () => ({
+  assertObjectIds: vi.fn(),
+  getLessonInCourse: vi.fn().mockResolvedValue({ _id: "lesson-1" }),
+  canAccessLessonProgress: vi.fn().mockResolvedValue(true),
+  getCourseProgressForUser: vi.fn().mockResolvedValue({
+    progressPct: 0,
+    completedCount: 0,
+    totalCount: 0,
+    lessons: [],
+  }),
+  syncEnrollmentProgressFromLessons: vi.fn(),
+}));
+
 vi.mock("../../cohorts/models/Cohort.js", () => ({
   Cohort: mocked.Cohort,
 }));
@@ -93,6 +123,7 @@ const {
   getLessonNotes,
   updateNote,
   deleteNote,
+  submitInteractiveStep,
   updateCourse,
 } = await import("./courseController.js");
 
@@ -776,5 +807,112 @@ describe("courseController", () => {
 
     expect(mocked.LessonNote).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it("submits a reflect step and records completed step progress", async () => {
+    mocked.Lesson.findOne.mockResolvedValue({
+      _id: "lesson-1",
+      type: "INTERACTIVE",
+      interactiveConfig: {
+        steps: [{ id: "step-1", title: "Reflect", step_type: "reflect", order: 0 }],
+      },
+    });
+    mocked.InteractiveStepSubmission.findOneAndUpdate.mockResolvedValue({
+      _id: "submission-1",
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      stepId: "step-1",
+      userId: "user-1",
+      stepType: "reflect",
+      responseText: "My reflection",
+      status: "completed",
+      visibility: "private",
+    });
+    mocked.LessonProgress.findOneAndUpdate.mockResolvedValue({
+      completedStepIds: ["step-1"],
+    });
+    const res = createRes();
+
+    await submitInteractiveStep(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1", stepId: "step-1" },
+        body: { responseText: "My reflection" },
+        user: { _id: "user-1", role: "PARTICIPANT" },
+      },
+      res
+    );
+
+    expect(mocked.InteractiveStepSubmission.findOneAndUpdate).toHaveBeenCalledWith(
+      { courseId: "course-1", lessonId: "lesson-1", stepId: "step-1", userId: "user-1" },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          stepType: "reflect",
+          responseText: "My reflection",
+          status: "completed",
+        }),
+      }),
+      { new: true, upsert: true, runValidators: true }
+    );
+    expect(mocked.LessonProgress.findOneAndUpdate).toHaveBeenCalledWith(
+      { userId: "user-1", lessonId: "lesson-1" },
+      expect.objectContaining({ $addToSet: { completedStepIds: "step-1" } }),
+      { new: true, upsert: true, runValidators: true }
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ completed: true }),
+      })
+    );
+  });
+
+  it("does not complete a quiz step until the correct answer is submitted", async () => {
+    mocked.Lesson.findOne.mockResolvedValue({
+      _id: "lesson-1",
+      type: "INTERACTIVE",
+      interactiveConfig: {
+        steps: [
+          {
+            id: "quiz-1",
+            title: "Quiz",
+            step_type: "quiz",
+            options: [
+              { id: "a", label: "A" },
+              { id: "b", label: "B" },
+            ],
+            correct_answer: "b",
+            order: 0,
+          },
+        ],
+      },
+    });
+    mocked.InteractiveStepSubmission.findOneAndUpdate.mockResolvedValue({
+      _id: "submission-1",
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      stepId: "quiz-1",
+      userId: "user-1",
+      stepType: "quiz",
+      selectedAnswer: "a",
+      isCorrect: false,
+      status: "submitted",
+      visibility: "private",
+    });
+    const res = createRes();
+
+    await submitInteractiveStep(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1", stepId: "quiz-1" },
+        body: { selectedAnswer: "a" },
+        user: { _id: "user-1", role: "PARTICIPANT" },
+      },
+      res
+    );
+
+    expect(mocked.LessonProgress.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ completed: false }),
+      })
+    );
   });
 });

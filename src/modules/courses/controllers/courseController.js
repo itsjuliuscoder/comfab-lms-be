@@ -4,6 +4,7 @@ import { Section } from "../models/Section.js";
 import { Lesson } from "../models/Lesson.js";
 import { LessonNote } from "../models/LessonNote.js";
 import { LessonProgress } from "../models/LessonProgress.js";
+import { InteractiveStepSubmission } from "../models/InteractiveStepSubmission.js";
 import { Enrollment } from "../../enrollments/models/Enrollment.js";
 import {
   assertObjectIds,
@@ -84,6 +85,143 @@ const getLessonForNoteRequest = async (courseId, lessonId) => {
     throw error;
   }
   return lesson;
+};
+
+const normalizeInteractiveStep = (step, index = 0) => {
+  const stepType = step.step_type || "reflect";
+  const normalized = {
+    ...step,
+    id: step.id,
+    title: String(step.title || "").trim(),
+    description: String(step.description || "").trim(),
+    order: Number.isFinite(Number(step.order)) ? Number(step.order) : index,
+    step_type: stepType,
+  };
+
+  if (stepType === "quiz") {
+    normalized.quiz_type = step.quiz_type || "multiple_choice";
+    normalized.options = (step.options || []).map((option, optionIndex) => ({
+      id: option.id || `option-${optionIndex + 1}`,
+      label: String(option.label || "").trim(),
+    }));
+    normalized.correct_answer = step.correct_answer || "";
+    normalized.feedback_correct = step.feedback_correct || "";
+    normalized.feedback_incorrect = step.feedback_incorrect || "";
+  } else {
+    normalized.options = [];
+    normalized.correct_answer = undefined;
+    normalized.quiz_type = undefined;
+  }
+
+  if (stepType === "task" || stepType === "peer_share") {
+    normalized.submission_type = step.submission_type || "text";
+    normalized.visibility = stepType === "peer_share" ? "cohort" : "private";
+  } else {
+    normalized.submission_type = undefined;
+    normalized.visibility = "private";
+  }
+
+  return normalized;
+};
+
+const normalizeInteractiveConfig = (interactiveConfig = {}) => ({
+  introduction: String(interactiveConfig.introduction || "").trim(),
+  steps: (interactiveConfig.steps || []).map(normalizeInteractiveStep),
+});
+
+const validateInteractiveConfig = (interactiveConfig) => {
+  const normalized = normalizeInteractiveConfig(interactiveConfig);
+  if (!normalized.steps.length) {
+    const error = new Error("Interactive lessons require at least one step");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  for (const step of normalized.steps) {
+    if (!step.id || !step.title) {
+      const error = new Error("Interactive steps require an id and title");
+      error.statusCode = 400;
+      throw error;
+    }
+    if (step.step_type === "quiz") {
+      const options = step.options || [];
+      if (
+        !options.length ||
+        options.some((option) => !option.id || !option.label) ||
+        !step.correct_answer ||
+        !options.some((option) => option.id === step.correct_answer)
+      ) {
+        const error = new Error("Quiz steps require options and a correct answer");
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+    if (
+      (step.step_type === "task" || step.step_type === "peer_share") &&
+      !["text", "file", "link"].includes(step.submission_type)
+    ) {
+      const error = new Error("Task steps require a valid submission type");
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  return normalized;
+};
+
+const toFrontendSubmission = (submissionDoc) => {
+  if (!submissionDoc) return null;
+  const submission =
+    typeof submissionDoc.toObject === "function"
+      ? submissionDoc.toObject({ virtuals: true })
+      : { ...submissionDoc };
+
+  return {
+    id: submission.id || submission._id?.toString(),
+    courseId: submission.courseId?.toString?.() || submission.courseId,
+    lessonId: submission.lessonId?.toString?.() || submission.lessonId,
+    stepId: submission.stepId,
+    userId: submission.userId?._id?.toString?.() || submission.userId?.toString?.() || submission.userId,
+    user:
+      submission.userId && typeof submission.userId === "object"
+        ? {
+            id: submission.userId._id?.toString?.() || submission.userId.id,
+            name: submission.userId.name,
+            email: submission.userId.email,
+          }
+        : undefined,
+    stepType: submission.stepType,
+    responseText: submission.responseText || "",
+    responseLink: submission.responseLink || "",
+    file: submission.file,
+    selectedAnswer: submission.selectedAnswer || "",
+    isCorrect: submission.isCorrect,
+    status: submission.status,
+    visibility: submission.visibility,
+    createdAt: submission.createdAt,
+    updatedAt: submission.updatedAt,
+  };
+};
+
+const getInteractiveLessonAndStep = async (courseId, lessonId, stepId) => {
+  const lesson = await Lesson.findOne({ _id: lessonId, courseId });
+  if (!lesson || lesson.type !== "INTERACTIVE") {
+    const error = new Error("Interactive lesson not found in this course");
+    error.statusCode = 404;
+    error.code = "LESSON_NOT_FOUND";
+    throw error;
+  }
+
+  const steps = (lesson.interactiveConfig?.steps || []).map(normalizeInteractiveStep);
+  const step = steps.find((item) => item.id === stepId);
+  if (!step) {
+    const error = new Error("Interactive step not found");
+    error.statusCode = 404;
+    error.code = "STEP_NOT_FOUND";
+    throw error;
+  }
+
+  return { lesson, step };
 };
 
 const loadValidatedCohorts = async (programId, cohortIds = []) => {
@@ -692,12 +830,10 @@ export const updateLesson = async (req, res) => {
     }
 
     if (lesson.type === "INTERACTIVE" && updates.interactiveConfig !== undefined) {
-      if (!updates.interactiveConfig?.steps?.length) {
-        return errorResponse(
-          res,
-          new Error("Interactive lessons require at least one step"),
-          400
-        );
+      try {
+        updates.interactiveConfig = validateInteractiveConfig(updates.interactiveConfig);
+      } catch (validationError) {
+        return errorResponse(res, validationError, validationError.statusCode || 400);
       }
     }
 
@@ -961,6 +1097,200 @@ export const updateLessonProgress = async (req, res) => {
   } catch (error) {
     logger.error("Update lesson progress error:", error);
     return errorResponse(res, error);
+  }
+};
+
+// GET /courses/:courseId/lessons/:lessonId/interactive-submissions
+export const getInteractiveStepSubmissions = async (req, res) => {
+  try {
+    const { courseId, lessonId } = req.params;
+
+    try {
+      assertObjectIds(courseId, lessonId);
+      await getLessonInCourse(lessonId, courseId);
+    } catch (e) {
+      const handled = handleLessonProgressParamError(res, e);
+      if (handled) return handled;
+      throw e;
+    }
+
+    const allowed = await canAccessLessonProgress(req.user, courseId);
+    if (!allowed) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    const submissions = await InteractiveStepSubmission.find({
+      courseId,
+      lessonId,
+      userId: req.user._id,
+    }).sort({ updatedAt: -1 });
+
+    return successResponse(
+      res,
+      { submissions: submissions.map(toFrontendSubmission) },
+      "Interactive submissions retrieved successfully"
+    );
+  } catch (error) {
+    logger.error("Get interactive submissions error:", error);
+    return errorResponse(res, error, error.statusCode || 500);
+  }
+};
+
+// POST /courses/:courseId/lessons/:lessonId/interactive-submissions/:stepId
+export const submitInteractiveStep = async (req, res) => {
+  try {
+    const { courseId, lessonId, stepId } = req.params;
+    const { lesson, step } = await getInteractiveLessonAndStep(courseId, lessonId, stepId);
+
+    const allowed = await canAccessLessonProgress(req.user, courseId);
+    if (!allowed) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    const payload = req.body || {};
+    const update = {
+      courseId,
+      lessonId,
+      stepId,
+      userId: req.user._id,
+      stepType: step.step_type,
+      visibility: step.step_type === "peer_share" ? "cohort" : "private",
+    };
+
+    let completed = false;
+    let feedback = "";
+
+    if (step.step_type === "quiz") {
+      const selectedAnswer = String(payload.selectedAnswer || "");
+      const isCorrect = selectedAnswer === step.correct_answer;
+      update.selectedAnswer = selectedAnswer;
+      update.isCorrect = isCorrect;
+      update.status = isCorrect ? "completed" : "submitted";
+      feedback = isCorrect
+        ? step.feedback_correct || "Correct answer."
+        : step.feedback_incorrect || "That answer is not correct yet. Try again.";
+      completed = isCorrect;
+    } else if (step.step_type === "task" || step.step_type === "peer_share") {
+      if (step.submission_type === "text") {
+        update.responseText = String(payload.responseText || "").trim();
+        if (!update.responseText) {
+          return errorResponse(res, new Error("Text response is required"), 400);
+        }
+      }
+      if (step.submission_type === "link") {
+        update.responseLink = String(payload.responseLink || "").trim();
+        if (!update.responseLink) {
+          return errorResponse(res, new Error("Link response is required"), 400);
+        }
+      }
+      if (step.submission_type === "file") {
+        if (!req.file) {
+          return errorResponse(res, new Error("File proof is required"), 400);
+        }
+        const uploadResult = await uploadToCloudinary(req.file, "interactive-step-submissions");
+        update.file = {
+          publicId: uploadResult.publicId,
+          url: uploadResult.url,
+          name: req.file.originalname,
+          mime: req.file.mimetype,
+          size: req.file.size,
+        };
+      }
+      update.status = "pending_review";
+      completed = true;
+    } else {
+      update.responseText = String(payload.responseText || "").trim();
+      if (!update.responseText) {
+        return errorResponse(res, new Error("Reflection response is required"), 400);
+      }
+      update.status = "completed";
+      completed = true;
+    }
+
+    const submission = await InteractiveStepSubmission.findOneAndUpdate(
+      { courseId, lessonId, stepId, userId: req.user._id },
+      { $set: update },
+      { new: true, upsert: true, runValidators: true }
+    );
+
+    let progress = null;
+    if (completed) {
+      progress = await LessonProgress.findOneAndUpdate(
+        { userId: req.user._id, lessonId },
+        {
+          $set: { courseId, lastAccessedAt: new Date() },
+          $addToSet: { completedStepIds: stepId },
+        },
+        { new: true, upsert: true, runValidators: true }
+      );
+    }
+
+    return successResponse(
+      res,
+      {
+        submission: toFrontendSubmission(submission),
+        completed,
+        feedback,
+        completedStepIds: progress?.completedStepIds || [],
+        lessonId: lesson._id?.toString?.() || lessonId,
+      },
+      completed ? "Interactive step completed" : "Interactive step submitted"
+    );
+  } catch (error) {
+    logger.error("Submit interactive step error:", error);
+    return errorResponse(res, error, error.statusCode || 500);
+  }
+};
+
+// GET /courses/:courseId/lessons/:lessonId/interactive-submissions/:stepId/shared
+export const getSharedInteractiveStepSubmissions = async (req, res) => {
+  try {
+    const { courseId, lessonId, stepId } = req.params;
+    const { step } = await getInteractiveLessonAndStep(courseId, lessonId, stepId);
+
+    if (step.step_type !== "peer_share") {
+      return successResponse(res, { submissions: [] }, "No shared submissions for this step");
+    }
+
+    const allowed = await canAccessLessonProgress(req.user, courseId);
+    if (!allowed && !["ADMIN", "INSTRUCTOR"].includes(req.user.role)) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    const filter = { courseId, lessonId, stepId, visibility: "cohort" };
+
+    if (!["ADMIN", "INSTRUCTOR"].includes(req.user.role)) {
+      const course = await Course.findById(courseId).select("cohortIds");
+      const { UserCohort } = await import("../../cohorts/models/UserCohort.js");
+      const membership = await UserCohort.findOne({
+        userId: req.user._id,
+        cohortId: { $in: course?.cohortIds || [] },
+        status: "ACTIVE",
+      });
+      if (!membership) {
+        return forbiddenResponse(res, "You are not assigned to a cohort for this course");
+      }
+
+      const cohortMembers = await UserCohort.find({
+        cohortId: membership.cohortId,
+        status: "ACTIVE",
+      }).select("userId");
+      filter.userId = { $in: cohortMembers.map((member) => member.userId) };
+    }
+
+    const submissions = await InteractiveStepSubmission.find(filter)
+      .populate("userId", "name email")
+      .sort({ updatedAt: -1 })
+      .limit(100);
+
+    return successResponse(
+      res,
+      { submissions: submissions.map(toFrontendSubmission) },
+      "Shared interactive submissions retrieved successfully"
+    );
+  } catch (error) {
+    logger.error("Get shared interactive submissions error:", error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -1531,13 +1861,22 @@ export const createLesson = async (req, res) => {
       lessonOrder = lastLesson ? lastLesson.order + 1 : 1;
     }
 
+    let normalizedInteractiveConfig = interactiveConfig;
+    if (type === "INTERACTIVE") {
+      try {
+        normalizedInteractiveConfig = validateInteractiveConfig(interactiveConfig);
+      } catch (validationError) {
+        return errorResponse(res, validationError, validationError.statusCode || 400);
+      }
+    }
+
     const lesson = new Lesson({
       sectionId,
       courseId,
       title,
       type,
       content,
-      interactiveConfig,
+      interactiveConfig: normalizedInteractiveConfig,
       youtubeVideoId,
       externalUrl,
       order: lessonOrder,

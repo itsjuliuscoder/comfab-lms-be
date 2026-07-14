@@ -47,6 +47,11 @@ const lessonSchema = new mongoose.Schema({
     },
     steps: [{
       id: { type: String, required: true },
+      step_type: {
+        type: String,
+        enum: ['reflect', 'quiz', 'task', 'peer_share'],
+        default: 'reflect',
+      },
       title: {
         type: String,
         required: true,
@@ -58,6 +63,28 @@ const lessonSchema = new mongoose.Schema({
         trim: true,
         maxlength: [2000, 'Step description cannot exceed 2000 characters'],
         default: '',
+      },
+      quiz_type: {
+        type: String,
+        enum: ['multiple_choice', 'true_false'],
+        default: undefined,
+      },
+      options: [{
+        id: { type: String, required: true },
+        label: { type: String, required: true, trim: true, maxlength: 500 },
+      }],
+      correct_answer: { type: String, trim: true, default: undefined },
+      feedback_correct: { type: String, trim: true, maxlength: 1000, default: '' },
+      feedback_incorrect: { type: String, trim: true, maxlength: 1000, default: '' },
+      submission_type: {
+        type: String,
+        enum: ['text', 'file', 'link'],
+        default: undefined,
+      },
+      visibility: {
+        type: String,
+        enum: ['private', 'cohort'],
+        default: 'private',
       },
       order: { type: Number, required: true, min: 0 },
     }],
@@ -152,6 +179,21 @@ lessonSchema.pre('save', function validateInteractiveLesson(next) {
     const steps = this.interactiveConfig?.steps || [];
     if (!steps.length) {
       return next(new Error('Interactive lessons require at least one step'));
+    }
+    for (const step of steps) {
+      step.step_type = step.step_type || 'reflect';
+      if (step.step_type === 'quiz') {
+        const options = step.options || [];
+        if (!options.length || !step.correct_answer || !options.some((option) => option.id === step.correct_answer)) {
+          return next(new Error('Quiz steps require options and a correct answer'));
+        }
+      }
+      if (step.step_type === 'task' || step.step_type === 'peer_share') {
+        if (!step.submission_type) {
+          return next(new Error('Task steps require a submission type'));
+        }
+        step.visibility = step.step_type === 'peer_share' ? 'cohort' : 'private';
+      }
     }
   }
   next();

@@ -1,4 +1,5 @@
 import express from "express";
+import multer from "multer";
 import { z } from "zod";
 import { optionalAuth, requireAuth } from "../../../middleware/auth.js";
 import { requireInstructor, requireRole } from "../../../middleware/rbac.js";
@@ -27,6 +28,9 @@ import {
   getCourseProgress,
   getLessonProgress,
   updateLessonProgress,
+  getInteractiveStepSubmissions,
+  submitInteractiveStep,
+  getSharedInteractiveStepSubmissions,
   createNote,
   getLessonNotes,
   updateNote,
@@ -39,6 +43,7 @@ import {
 } from "../controllers/courseController.js";
 
 const router = express.Router();
+const interactiveSubmissionUpload = multer({ dest: "/tmp" });
 
 // Validation schemas
 const createCourseSchema = z.object({
@@ -119,8 +124,23 @@ const interactiveConfigSchema = z.object({
     .array(
       z.object({
         id: z.string().min(1),
+        step_type: z.enum(["reflect", "quiz", "task", "peer_share"]).optional(),
         title: z.string().min(1).max(200),
         description: z.string().max(2000).optional(),
+        quiz_type: z.enum(["multiple_choice", "true_false"]).optional(),
+        options: z
+          .array(
+            z.object({
+              id: z.string().min(1),
+              label: z.string().min(1).max(500),
+            })
+          )
+          .optional(),
+        correct_answer: z.string().optional(),
+        feedback_correct: z.string().max(1000).optional(),
+        feedback_incorrect: z.string().max(1000).optional(),
+        submission_type: z.enum(["text", "file", "link"]).optional(),
+        visibility: z.enum(["private", "cohort"]).optional(),
         order: z.number().int().min(0),
       })
     )
@@ -386,6 +406,24 @@ router.patch(
   requireAuth,
   validateBody(updateProgressSchema),
   asyncHandler(updateLessonProgress)
+);
+
+// Interactive Step Submission Routes
+router.get(
+  "/:courseId/lessons/:lessonId/interactive-submissions",
+  requireAuth,
+  asyncHandler(getInteractiveStepSubmissions)
+);
+router.post(
+  "/:courseId/lessons/:lessonId/interactive-submissions/:stepId",
+  requireAuth,
+  interactiveSubmissionUpload.single("file"),
+  asyncHandler(submitInteractiveStep)
+);
+router.get(
+  "/:courseId/lessons/:lessonId/interactive-submissions/:stepId/shared",
+  requireAuth,
+  asyncHandler(getSharedInteractiveStepSubmissions)
 );
 
 // Notes Routes
