@@ -23,6 +23,7 @@ const lessonSchema = new mongoose.Schema({
       'VIDEO',
       'TEXT',
       'INTERACTIVE',
+      'PRESENTATION',
       'QUIZ',
       'ASSIGNMENT',
       'FILE',

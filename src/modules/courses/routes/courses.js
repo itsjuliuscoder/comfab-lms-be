@@ -276,6 +276,7 @@ const createLessonSchema = z
       "TEXT",
       "VIDEO",
       "INTERACTIVE",
+      "PRESENTATION",
       "AUDIO",
       "RESOURCE",
       "FILE",

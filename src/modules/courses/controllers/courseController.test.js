@@ -24,10 +24,22 @@ const mocked = vi.hoisted(() => {
   Lesson.find = vi.fn();
   Lesson.findOne = vi.fn();
 
+  const LessonNote = vi.fn(function LessonNote(data) {
+    Object.assign(this, data);
+    this._id = "note-1";
+    this.createdAt = new Date("2026-07-14T10:00:00.000Z");
+    this.updatedAt = new Date("2026-07-14T10:00:00.000Z");
+    this.save = vi.fn().mockResolvedValue(this);
+  });
+  LessonNote.find = vi.fn();
+  LessonNote.findOneAndUpdate = vi.fn();
+  LessonNote.findOneAndDelete = vi.fn();
+
   return {
     Course,
     Section,
     Lesson,
+    LessonNote,
     Cohort: {
       find: vi.fn(),
     },
@@ -52,6 +64,10 @@ vi.mock("../models/Lesson.js", () => ({
   Lesson: mocked.Lesson,
 }));
 
+vi.mock("../models/LessonNote.js", () => ({
+  LessonNote: mocked.LessonNote,
+}));
+
 vi.mock("../../cohorts/models/Cohort.js", () => ({
   Cohort: mocked.Cohort,
 }));
@@ -73,6 +89,10 @@ const {
   unpublishCourse,
   getSectionLessons,
   createLesson,
+  createNote,
+  getLessonNotes,
+  updateNote,
+  deleteNote,
   updateCourse,
 } = await import("./courseController.js");
 
@@ -593,5 +613,168 @@ describe("courseController", () => {
       })
     );
     expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it("creates persistent lesson notes scoped to the authenticated user", async () => {
+    mocked.Lesson.findOne.mockResolvedValue({ _id: "lesson-1" });
+    const res = createRes();
+
+    await createNote(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        body: { content: "My lesson note" },
+        user: { _id: "user-1" },
+      },
+      res
+    );
+
+    expect(mocked.Lesson.findOne).toHaveBeenCalledWith({
+      _id: "lesson-1",
+      courseId: "course-1",
+    });
+    expect(mocked.LessonNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        courseId: "course-1",
+        lessonId: "lesson-1",
+        userId: "user-1",
+        content: "My lesson note",
+      })
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          note: expect.objectContaining({
+            id: "note-1",
+            content: "My lesson note",
+          }),
+        }),
+      })
+    );
+  });
+
+  it("lists only the authenticated user's notes for a lesson", async () => {
+    mocked.Lesson.findOne.mockResolvedValue({ _id: "lesson-1" });
+    const chain = {
+      sort: vi.fn().mockResolvedValue([
+        {
+          _id: "note-1",
+          courseId: "course-1",
+          lessonId: "lesson-1",
+          userId: "user-1",
+          content: "Saved note",
+          createdAt: new Date("2026-07-14T10:00:00.000Z"),
+          updatedAt: new Date("2026-07-14T10:00:00.000Z"),
+        },
+      ]),
+    };
+    mocked.LessonNote.find.mockReturnValue(chain);
+    const res = createRes();
+
+    await getLessonNotes(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        user: { _id: "user-1" },
+      },
+      res
+    );
+
+    expect(mocked.LessonNote.find).toHaveBeenCalledWith({
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      userId: "user-1",
+    });
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          notes: [expect.objectContaining({ id: "note-1" })],
+        }),
+      })
+    );
+  });
+
+  it("updates only notes owned by the authenticated user", async () => {
+    mocked.Lesson.findOne.mockResolvedValue({ _id: "lesson-1" });
+    mocked.LessonNote.findOneAndUpdate.mockResolvedValue({
+      _id: "note-1",
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      userId: "user-1",
+      content: "Updated note",
+      createdAt: new Date("2026-07-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-07-14T10:01:00.000Z"),
+    });
+    const res = createRes();
+
+    await updateNote(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1", id: "note-1" },
+        body: { content: "Updated note" },
+        user: { _id: "user-1" },
+      },
+      res
+    );
+
+    expect(mocked.LessonNote.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: "note-1",
+        courseId: "course-1",
+        lessonId: "lesson-1",
+        userId: "user-1",
+      },
+      { content: "Updated note" },
+      { new: true, runValidators: true }
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          note: expect.objectContaining({ content: "Updated note" }),
+        }),
+      })
+    );
+  });
+
+  it("deletes only notes owned by the authenticated user", async () => {
+    mocked.Lesson.findOne.mockResolvedValue({ _id: "lesson-1" });
+    mocked.LessonNote.findOneAndDelete.mockResolvedValue({ _id: "note-1" });
+    const res = createRes();
+
+    await deleteNote(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1", id: "note-1" },
+        user: { _id: "user-1" },
+      },
+      res
+    );
+
+    expect(mocked.LessonNote.findOneAndDelete).toHaveBeenCalledWith({
+      _id: "note-1",
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      userId: "user-1",
+    });
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: true,
+        data: null,
+      })
+    );
+  });
+
+  it("rejects notes when the lesson is not in the requested course", async () => {
+    mocked.Lesson.findOne.mockResolvedValue(null);
+    const res = createRes();
+
+    await createNote(
+      {
+        params: { courseId: "course-1", lessonId: "missing-lesson" },
+        body: { content: "My note" },
+        user: { _id: "user-1" },
+      },
+      res
+    );
+
+    expect(mocked.LessonNote).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
   });
 });

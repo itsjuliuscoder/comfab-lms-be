@@ -17,6 +17,7 @@ const createMaterialSchema = z.object({
   isRequired: z.boolean().optional(),
   isPublic: z.boolean().optional(),
   order: z.number().int().min(0).optional(),
+  status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).optional(),
   tags: z.array(z.string()).optional(),
   metadata: z.object({
     author: z.string().optional(),

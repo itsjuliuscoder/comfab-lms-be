@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { Course } from "../models/Course.js";
 import { Section } from "../models/Section.js";
 import { Lesson } from "../models/Lesson.js";
+import { LessonNote } from "../models/LessonNote.js";
 import { LessonProgress } from "../models/LessonProgress.js";
 import { Enrollment } from "../../enrollments/models/Enrollment.js";
 import {
@@ -54,6 +55,35 @@ const buildCohortSummary = (cohortDoc) => {
     status: cohort.status,
     programId: cohort.programId?.toString?.() || cohort.programId,
   };
+};
+
+const toFrontendNote = (noteDoc) => {
+  if (!noteDoc) return null;
+  const note =
+    typeof noteDoc.toObject === "function"
+      ? noteDoc.toObject({ virtuals: true })
+      : { ...noteDoc };
+
+  return {
+    id: note.id || note._id?.toString(),
+    courseId: note.courseId?.toString?.() || note.courseId,
+    lessonId: note.lessonId?.toString?.() || note.lessonId,
+    userId: note.userId?.toString?.() || note.userId,
+    content: note.content,
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt,
+  };
+};
+
+const getLessonForNoteRequest = async (courseId, lessonId) => {
+  const lesson = await Lesson.findOne({ _id: lessonId, courseId });
+  if (!lesson) {
+    const error = new Error("Lesson not found in this course");
+    error.statusCode = 404;
+    error.code = "LESSON_NOT_FOUND";
+    throw error;
+  }
+  return lesson;
 };
 
 const loadValidatedCohorts = async (programId, cohortIds = []) => {
@@ -940,20 +970,25 @@ export const createNote = async (req, res) => {
     const { courseId, lessonId } = req.params;
     const { content } = req.body;
 
-    // In a real implementation, you would create a note in a notes model
-    // For now, we'll just return success
-    const note = {
-      id: "temp-id",
-      content,
-      lessonId,
-      userId: req.user._id,
-      createdAt: new Date(),
-    };
+    await getLessonForNoteRequest(courseId, lessonId);
 
-    return successResponse(res, { note }, "Note created successfully", 201);
+    const note = new LessonNote({
+      courseId,
+      lessonId,
+      content,
+      userId: req.user._id,
+    });
+    await note.save();
+
+    return successResponse(
+      res,
+      { note: toFrontendNote(note) },
+      "Note created successfully",
+      201
+    );
   } catch (error) {
     logger.error("Create note error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -962,14 +997,22 @@ export const getLessonNotes = async (req, res) => {
   try {
     const { courseId, lessonId } = req.params;
 
-    // In a real implementation, you would get notes from a notes model
-    // For now, we'll return empty array
-    const notes = [];
+    await getLessonForNoteRequest(courseId, lessonId);
 
-    return successResponse(res, { notes }, "Notes retrieved successfully");
+    const notes = await LessonNote.find({
+      courseId,
+      lessonId,
+      userId: req.user._id,
+    }).sort({ updatedAt: -1 });
+
+    return successResponse(
+      res,
+      { notes: notes.map(toFrontendNote) },
+      "Notes retrieved successfully"
+    );
   } catch (error) {
     logger.error("Get lesson notes error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -979,12 +1022,31 @@ export const updateNote = async (req, res) => {
     const { courseId, lessonId, id } = req.params;
     const { content } = req.body;
 
-    // In a real implementation, you would update the note in a notes model
-    // For now, we'll just return success
-    return successResponse(res, null, "Note updated successfully");
+    await getLessonForNoteRequest(courseId, lessonId);
+
+    const note = await LessonNote.findOneAndUpdate(
+      {
+        _id: id,
+        courseId,
+        lessonId,
+        userId: req.user._id,
+      },
+      { content },
+      { new: true, runValidators: true }
+    );
+
+    if (!note) {
+      return notFoundResponse(res, "Note");
+    }
+
+    return successResponse(
+      res,
+      { note: toFrontendNote(note) },
+      "Note updated successfully"
+    );
   } catch (error) {
     logger.error("Update note error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -993,12 +1055,23 @@ export const deleteNote = async (req, res) => {
   try {
     const { courseId, lessonId, id } = req.params;
 
-    // In a real implementation, you would delete the note from a notes model
-    // For now, we'll just return success
+    await getLessonForNoteRequest(courseId, lessonId);
+
+    const note = await LessonNote.findOneAndDelete({
+      _id: id,
+      courseId,
+      lessonId,
+      userId: req.user._id,
+    });
+
+    if (!note) {
+      return notFoundResponse(res, "Note");
+    }
+
     return successResponse(res, null, "Note deleted successfully");
   } catch (error) {
     logger.error("Delete note error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
