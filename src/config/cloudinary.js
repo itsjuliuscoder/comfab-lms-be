@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from 'cloudinary';
+import { Readable } from 'node:stream';
 import { config } from './env.js';
 import { logger } from '../utils/logger.js';
 
@@ -10,15 +11,50 @@ cloudinary.config({
 
 export const uploadToCloudinary = async (file, folder = 'confab-lms') => {
   try {
-    const result = await cloudinary.uploader.upload(file.path, {
+    const uploadOptions = {
       folder,
       resource_type: 'auto',
-      allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'mp4', 'mov', 'avi'],
+      allowed_formats: [
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'webp',
+        'pdf',
+        'doc',
+        'docx',
+        'ppt',
+        'pptx',
+        'mp4',
+        'mov',
+        'avi'
+      ],
       transformation: [
         { quality: 'auto:good' },
         { fetch_format: 'auto' }
       ]
-    });
+    };
+
+    const source = file.path || file.buffer;
+    if (!source) {
+      throw new Error('No upload source provided');
+    }
+
+    const result = Buffer.isBuffer(source)
+      ? await new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            uploadOptions,
+            (error, uploadResult) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve(uploadResult);
+            }
+          );
+          Readable.from(source).pipe(uploadStream);
+        })
+      : await cloudinary.uploader.upload(source, uploadOptions);
 
     return {
       publicId: result.public_id,
