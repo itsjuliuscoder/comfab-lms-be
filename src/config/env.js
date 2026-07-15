@@ -59,10 +59,6 @@ const envSchema = z.object({
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
   
-  // Rate Limiting
-  RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('900000'), // 15 minutes
-  RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default('100'),
-  
   // File Upload
   MAX_FILE_SIZE_MB: z.string().transform(Number).default('10'),
 
@@ -136,10 +132,6 @@ export const config = {
   },
   logging: {
     level: env.LOG_LEVEL,
-  },
-  rateLimit: {
-    windowMs: env.RATE_LIMIT_WINDOW_MS,
-    maxRequests: env.RATE_LIMIT_MAX_REQUESTS,
   },
   upload: {
     maxFileSizeMB: env.MAX_FILE_SIZE_MB,

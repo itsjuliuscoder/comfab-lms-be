@@ -4,7 +4,6 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import morgan from "morgan";
-import rateLimit from "express-rate-limit";
 
 import { config } from "./config/env.js";
 import { connectDatabase } from "./config/database.js";
@@ -57,23 +56,6 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: config.rateLimit.windowMs,
-  max: config.rateLimit.maxRequests,
-  message: {
-    ok: false,
-    error: {
-      code: "RATE_LIMIT_EXCEEDED",
-      message: "Too many requests from this IP, please try again later.",
-    },
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-app.use("/api/", limiter);
 
 // Compression
 app.use(compression());
