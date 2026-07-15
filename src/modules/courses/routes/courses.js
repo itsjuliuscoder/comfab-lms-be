@@ -24,6 +24,7 @@ import {
   createLesson,
   getLesson,
   updateLesson,
+  deleteLesson,
   completeLesson,
   getCourseProgress,
   getLessonProgress,
@@ -390,6 +391,12 @@ router.patch(
   requireInstructor,
   validateBody(updateLessonSchema),
   asyncHandler(updateLesson)
+);
+router.delete(
+  "/:courseId/lessons/:lessonId",
+  requireAuth,
+  requireInstructor,
+  asyncHandler(deleteLesson)
 );
 router.post(
   "/:courseId/lessons/:lessonId/complete",

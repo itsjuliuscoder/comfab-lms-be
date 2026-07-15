@@ -29,6 +29,7 @@ import announcementRoutes from "./modules/announcements/routes/announcements.js"
 import notificationRoutes from "./modules/notifications/routes/notifications.js";
 import taskRoutes from "./modules/tasks/routes/tasks.js";
 import submissionRoutes from "./modules/tasks/routes/submissions.js";
+import aiRoutes from "./modules/ai/routes/ai.js";
 import { initSocket } from "./socket/index.js";
 
 const app = express();
@@ -133,6 +134,7 @@ app.use("/api/v1/announcements", announcementRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/tasks", taskRoutes);
 app.use("/api/v1/submissions", submissionRoutes);
+app.use("/api/v1/ai", aiRoutes);
 
 // Temporary welcome route
 app.get("/api/v1", (req, res) => {

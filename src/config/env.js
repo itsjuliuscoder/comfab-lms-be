@@ -65,6 +65,11 @@ const envSchema = z.object({
   
   // File Upload
   MAX_FILE_SIZE_MB: z.string().transform(Number).default('10'),
+
+  // AI
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
+  AI_TUTOR_CONTEXT_MAX_CHARS: z.string().transform(Number).default('12000'),
   
   // Security
   SESSION_SECRET: z.string().default('confab-session-secret-change-in-production'),
@@ -138,6 +143,11 @@ export const config = {
   },
   upload: {
     maxFileSizeMB: env.MAX_FILE_SIZE_MB,
+  },
+  ai: {
+    openaiApiKey: env.OPENAI_API_KEY,
+    openaiModel: env.OPENAI_MODEL,
+    tutorContextMaxChars: env.AI_TUTOR_CONTEXT_MAX_CHARS,
   },
   security: {
     sessionSecret: env.SESSION_SECRET,

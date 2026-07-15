@@ -23,6 +23,7 @@ const mocked = vi.hoisted(() => {
   });
   Lesson.find = vi.fn();
   Lesson.findOne = vi.fn();
+  Lesson.deleteOne = vi.fn();
 
   const LessonNote = vi.fn(function LessonNote(data) {
     Object.assign(this, data);
@@ -34,10 +35,40 @@ const mocked = vi.hoisted(() => {
   LessonNote.find = vi.fn();
   LessonNote.findOneAndUpdate = vi.fn();
   LessonNote.findOneAndDelete = vi.fn();
+  LessonNote.deleteMany = vi.fn();
+
+  const LessonDiscussion = vi.fn(function LessonDiscussion(data) {
+    Object.assign(this, data);
+    this._id = "discussion-1";
+    this.createdAt = new Date("2026-07-14T10:00:00.000Z");
+    this.updatedAt = new Date("2026-07-14T10:00:00.000Z");
+    this.replies = [];
+    this.save = vi.fn().mockResolvedValue(this);
+    this.populate = vi.fn().mockResolvedValue(this);
+  });
+  LessonDiscussion.create = vi.fn();
+  LessonDiscussion.find = vi.fn();
+  LessonDiscussion.findOne = vi.fn();
+  LessonDiscussion.deleteMany = vi.fn();
 
   const InteractiveStepSubmission = {
     find: vi.fn(),
     findOneAndUpdate: vi.fn(),
+    deleteMany: vi.fn(),
+  };
+
+  const CourseMaterial = {
+    find: vi.fn(),
+    deleteMany: vi.fn(),
+  };
+
+  const Task = {
+    find: vi.fn(),
+    deleteMany: vi.fn(),
+  };
+
+  const TaskSubmission = {
+    deleteMany: vi.fn(),
   };
 
   return {
@@ -45,9 +76,14 @@ const mocked = vi.hoisted(() => {
     Section,
     Lesson,
     LessonNote,
+    LessonDiscussion,
     InteractiveStepSubmission,
+    CourseMaterial,
+    Task,
+    TaskSubmission,
     LessonProgress: {
       findOneAndUpdate: vi.fn(),
+      deleteMany: vi.fn(),
     },
     Cohort: {
       find: vi.fn(),
@@ -77,12 +113,32 @@ vi.mock("../models/LessonNote.js", () => ({
   LessonNote: mocked.LessonNote,
 }));
 
+vi.mock("../models/LessonDiscussion.js", () => ({
+  LessonDiscussion: mocked.LessonDiscussion,
+}));
+
 vi.mock("../models/InteractiveStepSubmission.js", () => ({
   InteractiveStepSubmission: mocked.InteractiveStepSubmission,
 }));
 
+vi.mock("../models/CourseMaterial.js", () => ({
+  CourseMaterial: mocked.CourseMaterial,
+}));
+
 vi.mock("../models/LessonProgress.js", () => ({
   LessonProgress: mocked.LessonProgress,
+}));
+
+vi.mock("../../tasks/models/Task.js", () => ({
+  Task: mocked.Task,
+}));
+
+vi.mock("../../tasks/models/TaskSubmission.js", () => ({
+  TaskSubmission: mocked.TaskSubmission,
+}));
+
+vi.mock("../services/cloudinaryService.js", () => ({
+  deleteCourseMaterial: vi.fn().mockResolvedValue({ result: "ok" }),
 }));
 
 vi.mock("../services/lessonProgressService.js", () => ({
@@ -119,13 +175,20 @@ const {
   unpublishCourse,
   getSectionLessons,
   createLesson,
+  deleteLesson,
   createNote,
   getLessonNotes,
   updateNote,
   deleteNote,
+  getDiscussions,
+  createDiscussion,
+  deleteDiscussion,
+  addReply,
   submitInteractiveStep,
   updateCourse,
 } = await import("./courseController.js");
+
+const { canAccessLessonProgress } = await import("../services/lessonProgressService.js");
 
 const createFindChain = (value) => {
   const chain = {
@@ -141,6 +204,14 @@ const createPopulatePromise = (value) => {
   const promise = Promise.resolve(value);
   promise.populate = vi.fn(() => promise);
   return promise;
+};
+
+const createDiscussionFindChain = (value) => {
+  const chain = {
+    populate: vi.fn(() => chain),
+    sort: vi.fn().mockResolvedValue(value),
+  };
+  return chain;
 };
 
 const createRes = () => {
@@ -655,6 +726,114 @@ describe("courseController", () => {
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
+  it("allows an admin to delete a lesson and cleanup dependent records", async () => {
+    const lesson = {
+      _id: "lesson-1",
+      courseId: { ownerId: { toString: () => "owner-1" } },
+    };
+    mocked.Lesson.findOne.mockReturnValue(createPopulatePromise(lesson));
+    mocked.CourseMaterial.find.mockResolvedValue([
+      { _id: "material-1", file: { publicId: "course-materials/deck" } },
+    ]);
+    mocked.Task.find.mockReturnValue({
+      distinct: vi.fn().mockResolvedValue(["task-1"]),
+    });
+    mocked.Section.find.mockResolvedValue([{ _id: "section-1" }]);
+    mocked.Lesson.find.mockResolvedValue([{ durationSec: 600 }]);
+    mocked.LessonProgress.deleteMany.mockResolvedValue({});
+    mocked.LessonNote.deleteMany.mockResolvedValue({});
+    mocked.LessonDiscussion.deleteMany.mockResolvedValue({});
+    mocked.InteractiveStepSubmission.deleteMany.mockResolvedValue({});
+    mocked.TaskSubmission.deleteMany.mockResolvedValue({});
+    mocked.Task.deleteMany.mockResolvedValue({});
+    mocked.CourseMaterial.deleteMany.mockResolvedValue({});
+    mocked.Lesson.deleteOne.mockResolvedValue({});
+    mocked.Course.findByIdAndUpdate.mockResolvedValue({});
+    const res = createRes();
+
+    await deleteLesson(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        user: { _id: "admin-1", role: "ADMIN" },
+      },
+      res
+    );
+
+    expect(mocked.Lesson.findOne).toHaveBeenCalledWith({
+      _id: "lesson-1",
+      courseId: "course-1",
+    });
+    expect(mocked.CourseMaterial.deleteMany).toHaveBeenCalledWith({
+      course: "course-1",
+      lesson: "lesson-1",
+    });
+    expect(mocked.Lesson.deleteOne).toHaveBeenCalledWith({ _id: "lesson-1" });
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: true,
+        message: "Lesson deleted successfully",
+      })
+    );
+  });
+
+  it("allows a course-owner instructor to delete a lesson", async () => {
+    mocked.Lesson.findOne.mockReturnValue(
+      createPopulatePromise({
+        _id: "lesson-1",
+        courseId: { ownerId: { toString: () => "owner-1" } },
+      })
+    );
+    mocked.CourseMaterial.find.mockResolvedValue([]);
+    mocked.Task.find.mockReturnValue({
+      distinct: vi.fn().mockResolvedValue([]),
+    });
+    mocked.Section.find.mockResolvedValue([]);
+    mocked.LessonProgress.deleteMany.mockResolvedValue({});
+    mocked.LessonNote.deleteMany.mockResolvedValue({});
+    mocked.LessonDiscussion.deleteMany.mockResolvedValue({});
+    mocked.InteractiveStepSubmission.deleteMany.mockResolvedValue({});
+    mocked.TaskSubmission.deleteMany.mockResolvedValue({});
+    mocked.Task.deleteMany.mockResolvedValue({});
+    mocked.CourseMaterial.deleteMany.mockResolvedValue({});
+    mocked.Lesson.deleteOne.mockResolvedValue({});
+    mocked.Course.findByIdAndUpdate.mockResolvedValue({});
+    const res = createRes();
+
+    await deleteLesson(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        user: { _id: "owner-1", role: "INSTRUCTOR" },
+      },
+      res
+    );
+
+    expect(mocked.Lesson.deleteOne).toHaveBeenCalledWith({ _id: "lesson-1" });
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: true })
+    );
+  });
+
+  it("rejects a non-owner instructor deleting another course lesson", async () => {
+    mocked.Lesson.findOne.mockReturnValue(
+      createPopulatePromise({
+        _id: "lesson-1",
+        courseId: { ownerId: { toString: () => "owner-1" } },
+      })
+    );
+    const res = createRes();
+
+    await deleteLesson(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        user: { _id: "other-1", role: "INSTRUCTOR" },
+      },
+      res
+    );
+
+    expect(mocked.Lesson.deleteOne).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
   it("creates persistent lesson notes scoped to the authenticated user", async () => {
     mocked.Lesson.findOne.mockResolvedValue({ _id: "lesson-1" });
     const res = createRes();
@@ -816,6 +995,161 @@ describe("courseController", () => {
 
     expect(mocked.LessonNote).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it("lists lesson discussions for enrolled learners", async () => {
+    mocked.LessonDiscussion.find.mockReturnValue(
+      createDiscussionFindChain([
+        {
+          _id: "discussion-1",
+          courseId: "course-1",
+          lessonId: "lesson-1",
+          title: "Question",
+          content: "How should we apply this?",
+          authorId: { _id: "user-1", name: "Ada", email: "ada@example.com", role: "PARTICIPANT" },
+          replies: [],
+          createdAt: new Date("2026-07-14T10:00:00.000Z"),
+          updatedAt: new Date("2026-07-14T10:00:00.000Z"),
+        },
+      ])
+    );
+    const res = createRes();
+
+    await getDiscussions(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        user: { _id: "user-1", role: "PARTICIPANT" },
+      },
+      res
+    );
+
+    expect(mocked.LessonDiscussion.find).toHaveBeenCalledWith({
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      deletedAt: null,
+    });
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          discussions: [
+            expect.objectContaining({
+              id: "discussion-1",
+              author: expect.objectContaining({ name: "Ada" }),
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
+  it("creates persistent lesson discussions when access is allowed", async () => {
+    const discussion = new mocked.LessonDiscussion({
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      title: "Question",
+      content: "How should we apply this?",
+      authorId: { _id: "user-1", name: "Ada", role: "PARTICIPANT" },
+    });
+    mocked.LessonDiscussion.create.mockResolvedValue(discussion);
+    const res = createRes();
+
+    await createDiscussion(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        body: { title: "Question", content: "How should we apply this?" },
+        user: { _id: "user-1", role: "PARTICIPANT" },
+      },
+      res
+    );
+
+    expect(mocked.LessonDiscussion.create).toHaveBeenCalledWith({
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      title: "Question",
+      content: "How should we apply this?",
+      authorId: "user-1",
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it("forbids discussions for users without course access", async () => {
+    canAccessLessonProgress.mockResolvedValueOnce(false);
+    const res = createRes();
+
+    await createDiscussion(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        body: { title: "Question", content: "How should we apply this?" },
+        user: { _id: "user-1", role: "PARTICIPANT" },
+      },
+      res
+    );
+
+    expect(mocked.LessonDiscussion.create).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it("prevents participants from deleting another learner's discussion", async () => {
+    mocked.LessonDiscussion.findOne.mockResolvedValue({
+      _id: "discussion-1",
+      authorId: { toString: () => "user-2" },
+      deletedAt: null,
+      save: vi.fn(),
+    });
+    const res = createRes();
+
+    await deleteDiscussion(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1", id: "discussion-1" },
+        user: { _id: "user-1", role: "PARTICIPANT" },
+      },
+      res
+    );
+
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it("adds replies to an existing lesson discussion", async () => {
+    const discussion = {
+      _id: "discussion-1",
+      courseId: "course-1",
+      lessonId: "lesson-1",
+      title: "Question",
+      content: "How should we apply this?",
+      authorId: { _id: "user-1", name: "Ada" },
+      replies: [],
+      save: vi.fn().mockResolvedValue(null),
+      populate: vi.fn().mockResolvedValue(null),
+      createdAt: new Date("2026-07-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-07-14T10:00:00.000Z"),
+    };
+    discussion.replies.push = vi.fn((reply) => {
+      Array.prototype.push.call(discussion.replies, {
+        _id: "reply-1",
+        ...reply,
+        authorId: { _id: "user-2", name: "Ben" },
+        createdAt: new Date("2026-07-14T10:05:00.000Z"),
+        updatedAt: new Date("2026-07-14T10:05:00.000Z"),
+      });
+      return discussion.replies.length;
+    });
+    mocked.LessonDiscussion.findOne.mockResolvedValue(discussion);
+    const res = createRes();
+
+    await addReply(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1", id: "discussion-1" },
+        body: { content: "This helped me too." },
+        user: { _id: "user-2", role: "PARTICIPANT" },
+      },
+      res
+    );
+
+    expect(discussion.replies.push).toHaveBeenCalledWith({
+      content: "This helped me too.",
+      authorId: "user-2",
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
   });
 
   it("submits a reflect step and records completed step progress", async () => {

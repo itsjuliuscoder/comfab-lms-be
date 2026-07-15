@@ -169,6 +169,9 @@ export const createCourseMaterial = async (req, res) => {
       if (!lesson) {
         return errorResponse(res, { message: 'Lesson not found' }, 404);
       }
+      if (lesson.courseId?.toString() !== data.course) {
+        return errorResponse(res, { message: 'Lesson does not belong to this course' }, 400);
+      }
     }
 
     // Handle file upload

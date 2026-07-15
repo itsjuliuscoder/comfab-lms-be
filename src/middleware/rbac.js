@@ -1,13 +1,15 @@
 import { forbiddenResponse } from '../utils/response.js';
 
 export const requireRole = (...roles) => {
+  const allowedRoles = roles.flat();
+
   return (req, res, next) => {
     if (!req.user) {
       return forbiddenResponse(res, 'Authentication required');
     }
 
-    if (!roles.includes(req.user.role)) {
-      return forbiddenResponse(res, `Access denied. Required roles: ${roles.join(', ')}`);
+    if (!allowedRoles.includes(req.user.role)) {
+      return forbiddenResponse(res, `Access denied. Required roles: ${allowedRoles.join(', ')}`);
     }
 
     next();

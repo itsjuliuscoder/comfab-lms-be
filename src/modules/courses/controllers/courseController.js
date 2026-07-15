@@ -3,9 +3,13 @@ import { Course } from "../models/Course.js";
 import { Section } from "../models/Section.js";
 import { Lesson } from "../models/Lesson.js";
 import { LessonNote } from "../models/LessonNote.js";
+import { LessonDiscussion } from "../models/LessonDiscussion.js";
 import { LessonProgress } from "../models/LessonProgress.js";
 import { InteractiveStepSubmission } from "../models/InteractiveStepSubmission.js";
+import { CourseMaterial } from "../models/CourseMaterial.js";
 import { Enrollment } from "../../enrollments/models/Enrollment.js";
+import { Task } from "../../tasks/models/Task.js";
+import { TaskSubmission } from "../../tasks/models/TaskSubmission.js";
 import {
   assertObjectIds,
   getLessonInCourse,
@@ -26,6 +30,7 @@ import {
   createPaginationResult,
 } from "../../../utils/pagination.js";
 import { logger } from "../../../utils/logger.js";
+import { deleteCourseMaterial as deleteCourseMaterialFile } from "../services/cloudinaryService.js";
 
 const COURSE_LEVEL_MAP = {
   BEGINNER: "Beginner",
@@ -74,6 +79,76 @@ const toFrontendNote = (noteDoc) => {
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
   };
+};
+
+const toFrontendAuthor = (author) => {
+  if (!author) return undefined;
+  if (typeof author === "object" && author._id) {
+    return {
+      id: author._id.toString(),
+      name: author.name,
+      email: author.email,
+      role: author.role,
+      avatarUrl: author.avatarUrl || null,
+    };
+  }
+  return { id: author.toString?.() || author };
+};
+
+const toFrontendDiscussion = (discussionDoc) => {
+  if (!discussionDoc) return null;
+  const discussion =
+    typeof discussionDoc.toObject === "function"
+      ? discussionDoc.toObject({ virtuals: true })
+      : { ...discussionDoc };
+
+  return {
+    id: discussion.id || discussion._id?.toString(),
+    courseId: discussion.courseId?.toString?.() || discussion.courseId,
+    lessonId: discussion.lessonId?.toString?.() || discussion.lessonId,
+    title: discussion.title,
+    content: discussion.deletedAt ? "[Discussion deleted]" : discussion.content,
+    author: toFrontendAuthor(discussion.authorId),
+    createdAt: discussion.createdAt,
+    updatedAt: discussion.updatedAt,
+    deletedAt: discussion.deletedAt,
+    replies: (discussion.replies || []).map((reply) => ({
+      id: reply.id || reply._id?.toString(),
+      content: reply.content,
+      author: toFrontendAuthor(reply.authorId),
+      createdAt: reply.createdAt,
+      updatedAt: reply.updatedAt,
+    })),
+  };
+};
+
+const userOwnsDocument = (user, doc) =>
+  Boolean(user?._id && doc?.authorId?.toString?.() === user._id.toString());
+
+const canModerateCourse = async (user, courseId) => {
+  if (!user) return false;
+  if (user.role === "ADMIN") return true;
+  if (user.role !== "INSTRUCTOR") return false;
+  const course = await Course.findById(courseId).select("ownerId");
+  return course?.ownerId?.toString() === user._id.toString();
+};
+
+const assertCanAccessLessonDiscussion = async (user, courseId, lessonId) => {
+  try {
+    assertObjectIds(courseId, lessonId);
+    await getLessonInCourse(lessonId, courseId);
+  } catch (e) {
+    e.statusCode = e.code === "NOT_FOUND" ? 404 : 400;
+    throw e;
+  }
+
+  const allowed = await canAccessLessonProgress(user, courseId);
+  if (!allowed) {
+    const error = new Error("You must be enrolled in this course to join lesson discussions");
+    error.statusCode = 403;
+    error.code = "FORBIDDEN";
+    throw error;
+  }
 };
 
 const getLessonForNoteRequest = async (courseId, lessonId) => {
@@ -872,6 +947,71 @@ export const updateLesson = async (req, res) => {
   }
 };
 
+// DELETE /courses/:courseId/lessons/:lessonId - Delete lesson (instructor)
+export const deleteLesson = async (req, res) => {
+  try {
+    const { courseId, lessonId } = req.params;
+
+    const lesson = await Lesson.findOne({ _id: lessonId, courseId }).populate(
+      "courseId",
+      "ownerId"
+    );
+
+    if (!lesson) {
+      return notFoundResponse(res, "Lesson");
+    }
+
+    if (
+      req.user.role !== "ADMIN" &&
+      lesson.courseId.ownerId.toString() !== req.user._id.toString()
+    ) {
+      return forbiddenResponse(res, "Access denied");
+    }
+
+    const lessonMaterials = await CourseMaterial.find({ course: courseId, lesson: lessonId });
+    await Promise.all(
+      lessonMaterials.map(async (material) => {
+        if (!material.file?.publicId) return;
+        try {
+          await deleteCourseMaterialFile(material.file.publicId);
+        } catch (error) {
+          logger.warn("Failed to delete lesson material from Cloudinary", {
+            materialId: material._id?.toString(),
+            publicId: material.file.publicId,
+            error: error.message,
+          });
+        }
+      })
+    );
+
+    const taskIds = await Task.find({ courseId, lessonId }).distinct("_id");
+
+    await Promise.all([
+      LessonProgress.deleteMany({ courseId, lessonId }),
+      LessonNote.deleteMany({ courseId, lessonId }),
+      LessonDiscussion.deleteMany({ courseId, lessonId }),
+      InteractiveStepSubmission.deleteMany({ courseId, lessonId }),
+      TaskSubmission.deleteMany({ courseId, lessonId }),
+      taskIds.length
+        ? TaskSubmission.deleteMany({ taskId: { $in: taskIds } })
+        : Promise.resolve(),
+      Task.deleteMany({ courseId, lessonId }),
+      CourseMaterial.deleteMany({ course: courseId, lesson: lessonId }),
+      Lesson.deleteOne({ _id: lessonId }),
+    ]);
+
+    const totalDuration = await calculateCourseDuration(courseId);
+    await Course.findByIdAndUpdate(courseId, {
+      estimatedDuration: totalDuration,
+    });
+
+    return successResponse(res, null, "Lesson deleted successfully");
+  } catch (error) {
+    logger.error("Delete lesson error:", error);
+    return errorResponse(res, error);
+  }
+};
+
 function handleLessonProgressParamError(res, error) {
   if (error.code === "INVALID_ID") {
     return res.status(400).json({
@@ -1413,18 +1553,25 @@ export const getDiscussions = async (req, res) => {
   try {
     const { courseId, lessonId } = req.params;
 
-    // In a real implementation, you would get discussions from a discussions model
-    // For now, we'll return empty array
-    const discussions = [];
+    await assertCanAccessLessonDiscussion(req.user, courseId, lessonId);
+
+    const discussions = await LessonDiscussion.find({
+      courseId,
+      lessonId,
+      deletedAt: null,
+    })
+      .populate("authorId", "name email role avatarUrl")
+      .populate("replies.authorId", "name email role avatarUrl")
+      .sort({ createdAt: -1 });
 
     return successResponse(
       res,
-      { discussions },
+      { discussions: discussions.map(toFrontendDiscussion) },
       "Discussions retrieved successfully"
     );
   } catch (error) {
     logger.error("Get discussions error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -1434,26 +1581,27 @@ export const createDiscussion = async (req, res) => {
     const { courseId, lessonId } = req.params;
     const { title, content } = req.body;
 
-    // In a real implementation, you would create a discussion in a discussions model
-    // For now, we'll just return success
-    const discussion = {
-      id: "temp-id",
+    await assertCanAccessLessonDiscussion(req.user, courseId, lessonId);
+
+    const discussion = await LessonDiscussion.create({
+      courseId,
+      lessonId,
       title,
       content,
-      lessonId,
-      userId: req.user._id,
-      createdAt: new Date(),
-    };
+      authorId: req.user._id,
+    });
+
+    await discussion.populate("authorId", "name email role avatarUrl");
 
     return successResponse(
       res,
-      { discussion },
+      { discussion: toFrontendDiscussion(discussion) },
       "Discussion created successfully",
       201
     );
   } catch (error) {
     logger.error("Create discussion error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -1461,14 +1609,41 @@ export const createDiscussion = async (req, res) => {
 export const updateDiscussion = async (req, res) => {
   try {
     const { courseId, lessonId, id } = req.params;
-    const { title, content } = req.body;
+    const updates = {};
+    if (req.body.title !== undefined) updates.title = req.body.title;
+    if (req.body.content !== undefined) updates.content = req.body.content;
 
-    // In a real implementation, you would update the discussion in a discussions model
-    // For now, we'll just return success
-    return successResponse(res, null, "Discussion updated successfully");
+    await assertCanAccessLessonDiscussion(req.user, courseId, lessonId);
+
+    const discussion = await LessonDiscussion.findOne({
+      _id: id,
+      courseId,
+      lessonId,
+      deletedAt: null,
+    });
+
+    if (!discussion) {
+      return notFoundResponse(res, "Discussion");
+    }
+
+    const canModerate = await canModerateCourse(req.user, courseId);
+    if (!canModerate && !userOwnsDocument(req.user, discussion)) {
+      return forbiddenResponse(res, "You cannot edit this discussion");
+    }
+
+    Object.assign(discussion, updates);
+    await discussion.save();
+    await discussion.populate("authorId", "name email role avatarUrl");
+    await discussion.populate("replies.authorId", "name email role avatarUrl");
+
+    return successResponse(
+      res,
+      { discussion: toFrontendDiscussion(discussion) },
+      "Discussion updated successfully"
+    );
   } catch (error) {
     logger.error("Update discussion error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -1477,12 +1652,31 @@ export const deleteDiscussion = async (req, res) => {
   try {
     const { courseId, lessonId, id } = req.params;
 
-    // In a real implementation, you would delete the discussion from a discussions model
-    // For now, we'll just return success
+    await assertCanAccessLessonDiscussion(req.user, courseId, lessonId);
+
+    const discussion = await LessonDiscussion.findOne({
+      _id: id,
+      courseId,
+      lessonId,
+      deletedAt: null,
+    });
+
+    if (!discussion) {
+      return notFoundResponse(res, "Discussion");
+    }
+
+    const canModerate = await canModerateCourse(req.user, courseId);
+    if (!canModerate && !userOwnsDocument(req.user, discussion)) {
+      return forbiddenResponse(res, "You cannot delete this discussion");
+    }
+
+    discussion.deletedAt = new Date();
+    await discussion.save();
+
     return successResponse(res, null, "Discussion deleted successfully");
   } catch (error) {
     logger.error("Delete discussion error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
@@ -1492,20 +1686,47 @@ export const addReply = async (req, res) => {
     const { courseId, lessonId, id } = req.params;
     const { content } = req.body;
 
-    // In a real implementation, you would add a reply to the discussion in a discussions model
-    // For now, we'll just return success
-    const reply = {
-      id: "temp-reply-id",
-      content,
-      discussionId: id,
-      userId: req.user._id,
-      createdAt: new Date(),
-    };
+    await assertCanAccessLessonDiscussion(req.user, courseId, lessonId);
 
-    return successResponse(res, { reply }, "Reply added successfully", 201);
+    const discussion = await LessonDiscussion.findOne({
+      _id: id,
+      courseId,
+      lessonId,
+      deletedAt: null,
+    });
+
+    if (!discussion) {
+      return notFoundResponse(res, "Discussion");
+    }
+
+    discussion.replies.push({
+      content,
+      authorId: req.user._id,
+    });
+    await discussion.save();
+    await discussion.populate("authorId", "name email role avatarUrl");
+    await discussion.populate("replies.authorId", "name email role avatarUrl");
+
+    const reply = discussion.replies[discussion.replies.length - 1];
+
+    return successResponse(
+      res,
+      {
+        reply: {
+          id: reply.id || reply._id?.toString(),
+          content: reply.content,
+          author: toFrontendAuthor(reply.authorId),
+          createdAt: reply.createdAt,
+          updatedAt: reply.updatedAt,
+        },
+        discussion: toFrontendDiscussion(discussion),
+      },
+      "Reply added successfully",
+      201
+    );
   } catch (error) {
     logger.error("Add reply error:", error);
-    return errorResponse(res, error);
+    return errorResponse(res, error, error.statusCode || 500);
   }
 };
 
