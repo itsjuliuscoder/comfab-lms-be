@@ -2007,6 +2007,8 @@ export const getSectionLessons = async (req, res) => {
         id: lessonObject.id || lessonObject._id?.toString(),
         title: lessonObject.title,
         type: lessonObject.type,
+        youtubeVideoId:
+          lessonObject.type === "VIDEO" ? lessonObject.youtubeVideoId : undefined,
         durationSec: lessonObject.durationSec,
         isFree: lessonObject.isFree,
         order: lessonObject.order,
