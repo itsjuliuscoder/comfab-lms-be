@@ -3,9 +3,41 @@ import { User } from '../../users/models/User.js';
 import { generateTokens, verifyRefreshToken } from '../../../middleware/auth.js';
 import { sendWelcomeEmail, sendPasswordResetEmail } from '../../../config/email.js';
 import { sendUserVerificationEmail } from '../../../utils/emailVerification.js';
-import { notifyAdmins } from '../../notifications/services/notificationService.js';
+import { createNotification, notifyAdmins } from '../../notifications/services/notificationService.js';
 import { successResponse, errorResponse, unauthorizedResponse } from '../../../utils/response.js';
 import { logger } from '../../../utils/logger.js';
+
+const PLATFORM_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
+
+async function notifyInviterOfAcceptedInvite(user) {
+  if (!user?.invitedBy) {
+    return;
+  }
+
+  try {
+    const inviter = await User.findById(user.invitedBy).select('role');
+    if (!inviter || !PLATFORM_ADMIN_ROLES.includes(inviter.role)) {
+      return;
+    }
+
+    await createNotification({
+      userId: inviter._id,
+      type: 'SYSTEM',
+      title: 'Invite accepted',
+      message: `${user.name} accepted your invitation and completed signup.`,
+      link: '/dashboard/users',
+      data: {
+        invitedUserId: user._id.toString(),
+        invitedUserEmail: user.email,
+        invitedUserRole: user.role,
+        inviterId: inviter._id.toString(),
+      },
+      priority: 'MEDIUM',
+    });
+  } catch (notificationError) {
+    logger.error('Failed to notify inviter of accepted invite:', notificationError);
+  }
+}
 
 // POST /auth/register
 export const register = async (req, res) => {
@@ -474,6 +506,7 @@ export const completeInvite = async (req, res) => {
     }
 
     await user.save();
+    await notifyInviterOfAcceptedInvite(user);
 
     // Enroll in program when invited with a program assignment
     if (assignedProgramId) {
