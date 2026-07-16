@@ -33,7 +33,7 @@ export const getAllCohorts = async (req, res) => {
     }
 
     // For non-admin users, only show active cohorts
-    if (req.user?.role !== "ADMIN") {
+    if (!["SUPER_ADMIN", "ADMIN"].includes(req.user?.role)) {
       query.status = "ACTIVE";
     }
 
@@ -116,7 +116,7 @@ export const getCohortById = async (req, res) => {
     }
 
     // Check if user can access this cohort
-    if (req.user?.role !== "ADMIN" && req.user?.role !== "INSTRUCTOR") {
+    if (!["SUPER_ADMIN", "ADMIN"].includes(req.user?.role) && req.user?.role !== "INSTRUCTOR") {
       const membership = await UserCohort.isUserInCohort(
         req.user._id,
         cohort._id
@@ -144,7 +144,7 @@ export const updateCohort = async (req, res) => {
 
     // Check if user can update this cohort
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       cohort.createdBy.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -196,7 +196,7 @@ export const deleteCohort = async (req, res) => {
 
     // Check if user can delete this cohort
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       cohort.createdBy.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -225,7 +225,7 @@ export const getCohortMembers = async (req, res) => {
     }
 
     // Check if user can access this cohort
-    if (req.user?.role !== "ADMIN" && req.user?.role !== "INSTRUCTOR") {
+    if (!["SUPER_ADMIN", "ADMIN"].includes(req.user?.role) && req.user?.role !== "INSTRUCTOR") {
       const membership = await UserCohort.isUserInCohort(
         req.user._id,
         cohort._id
@@ -278,7 +278,7 @@ export const addMemberToCohort = async (req, res) => {
 
     // Check if user can add members to this cohort
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       cohort.createdBy.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -344,7 +344,7 @@ export const updateMemberRole = async (req, res) => {
 
     // Check if user can update members in this cohort
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       cohort.createdBy.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -386,7 +386,7 @@ export const removeMemberFromCohort = async (req, res) => {
 
     // Check if user can remove members from this cohort
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       cohort.createdBy.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");

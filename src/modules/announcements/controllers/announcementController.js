@@ -206,7 +206,7 @@ export const updateAnnouncement = async (req, res) => {
     }
 
     // Check permissions
-    if (announcement.authorId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (announcement.authorId.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return forbiddenResponse(res, 'You can only update your own announcements');
     }
 
@@ -275,7 +275,7 @@ export const deleteAnnouncement = async (req, res) => {
     }
 
     // Check permissions
-    if (announcement.authorId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (announcement.authorId.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return forbiddenResponse(res, 'You can only delete your own announcements');
     }
 
@@ -400,10 +400,10 @@ const checkAnnouncementAccess = async (announcement, userId, userRole) => {
       return !!enrollment;
     
     case 'INSTRUCTORS':
-      return ['INSTRUCTOR', 'ADMIN'].includes(userRole);
+      return ['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR'].includes(userRole);
     
     case 'ADMINS':
-      return userRole === 'ADMIN';
+      return ['SUPER_ADMIN', 'ADMIN'].includes(userRole);
     
     case 'SPECIFIC_USERS':
       return targetAudience.userIds?.some(id => id.toString() === userId.toString());

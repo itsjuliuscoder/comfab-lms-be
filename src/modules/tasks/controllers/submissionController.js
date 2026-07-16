@@ -201,7 +201,7 @@ export const getSubmissionsByTask = async (req, res) => {
     }
 
     const isStaff =
-      req.user.role === "ADMIN" ||
+      ["SUPER_ADMIN", "ADMIN"].includes(req.user.role) ||
       (req.user.role === "INSTRUCTOR" &&
         course.ownerId.toString() === req.user._id.toString());
 
@@ -270,7 +270,7 @@ export const reviewSubmission = async (req, res) => {
     }
 
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       (req.user.role !== "INSTRUCTOR" ||
         course.ownerId.toString() !== req.user._id.toString())
     ) {

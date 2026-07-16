@@ -33,7 +33,7 @@ export const getCourseAssessments = async (req, res) => {
     }
 
     // For non-admin users, only show published assessments
-    if (req.user?.role !== 'ADMIN' && course.ownerId.toString() !== req.user?._id.toString()) {
+    if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user?.role) && course.ownerId.toString() !== req.user?._id.toString()) {
       query.isPublished = true;
     }
 
@@ -84,7 +84,7 @@ export const createAssessment = async (req, res) => {
     }
 
     // Check permissions
-    if (course.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (course.ownerId.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return forbiddenResponse(res, 'Only course owner or admin can create assessments');
     }
 
@@ -152,7 +152,7 @@ export const getAssessmentById = async (req, res) => {
 
     // Check permissions
     if (!assessment.isPublished && 
-        req.user?.role !== 'ADMIN' && 
+        !['SUPER_ADMIN', 'ADMIN'].includes(req.user?.role) && 
         assessment.ownerId._id.toString() !== req.user?._id.toString()) {
       return forbiddenResponse(res, 'Access denied');
     }
@@ -183,7 +183,7 @@ export const updateAssessment = async (req, res) => {
     }
 
     // Check permissions
-    if (assessment.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (assessment.ownerId.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return forbiddenResponse(res, 'Only assessment owner or admin can update assessment');
     }
 
@@ -232,7 +232,7 @@ export const deleteAssessment = async (req, res) => {
     }
 
     // Check permissions
-    if (assessment.ownerId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (assessment.ownerId.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return forbiddenResponse(res, 'Only assessment owner or admin can delete assessment');
     }
 
@@ -631,7 +631,7 @@ export const getAssessmentResults = async (req, res) => {
       // Participants can only view their own results
       query.userId = userId;
       message = 'Your assessment results retrieved successfully';
-    } else if (req.user.role === 'INSTRUCTOR' || req.user.role === 'ADMIN') {
+    } else if (req.user.role === 'INSTRUCTOR' || ['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       // Instructors can view all results for their assessments, admins can view all
       if (req.user.role === 'INSTRUCTOR' && assessment.ownerId.toString() !== userId.toString()) {
         return forbiddenResponse(res, 'Only assessment owner or admin can view all results');

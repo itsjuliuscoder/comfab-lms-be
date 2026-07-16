@@ -144,7 +144,7 @@ export const getUserActivities = async (req, res) => {
     const { action, targetType, startDate, endDate } = req.query;
 
     // Check if user can access this data
-    if (req.user.role !== 'ADMIN' && req.user._id.toString() !== userId) {
+    if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role) && req.user._id.toString() !== userId) {
       return forbiddenResponse(res, 'Access denied');
     }
 

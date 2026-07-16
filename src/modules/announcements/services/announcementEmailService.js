@@ -33,13 +33,13 @@ export async function getAnnouncementRecipients(announcement) {
 
     case 'INSTRUCTORS':
       return User.find({
-        role: { $in: ['INSTRUCTOR', 'ADMIN'] },
+        role: { $in: ['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR'] },
         ...emailOptInQuery,
       }).select('name email preferences');
 
     case 'ADMINS':
       return User.find({
-        role: 'ADMIN',
+        role: { $in: ['SUPER_ADMIN', 'ADMIN'] },
         ...emailOptInQuery,
       }).select('name email preferences');
 

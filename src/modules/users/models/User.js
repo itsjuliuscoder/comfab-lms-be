@@ -27,7 +27,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'],
+    enum: ['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT'],
     default: 'PARTICIPANT',
   },
   avatarUrl: {
@@ -193,7 +193,7 @@ userSchema.statics.findParticipants = function() {
 
 // Static method to get admins
 userSchema.statics.findAdmins = function() {
-  return this.findByRole('ADMIN');
+  return this.find({ role: { $in: ['SUPER_ADMIN', 'ADMIN'] }, status: 'ACTIVE' });
 };
 
 export const User = mongoose.model('User', userSchema);

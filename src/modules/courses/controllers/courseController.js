@@ -127,7 +127,7 @@ const userOwnsDocument = (user, doc) =>
 
 const canModerateCourse = async (user, courseId) => {
   if (!user) return false;
-  if (user.role === "ADMIN") return true;
+  if (["SUPER_ADMIN", "ADMIN"].includes(user.role)) return true;
   if (user.role !== "INSTRUCTOR") return false;
   const course = await Course.findById(courseId).select("ownerId");
   return course?.ownerId?.toString() === user._id.toString();
@@ -407,7 +407,7 @@ export const getAllCourses = async (req, res) => {
       ];
     }
 
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(req.user?.role);
     const isOwnerFilter =
       req.user?.role === "INSTRUCTOR" &&
       ownerId &&
@@ -674,7 +674,7 @@ export const getCourseById = async (req, res) => {
 
     const userId = req.user?._id?.toString();
     const isOwner = userId && course.ownerId?._id?.toString() === userId;
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(req.user?.role);
 
     if (
       (!course.isPublic || course.status !== "PUBLISHED") &&
@@ -712,7 +712,7 @@ export const updateCourse = async (req, res) => {
 
     // Check if user can update this course
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       course.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -759,7 +759,7 @@ export const deleteCourse = async (req, res) => {
 
     // Check if user can delete this course
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       course.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -784,7 +784,7 @@ export const publishCourse = async (req, res) => {
     }
 
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       course.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -818,7 +818,7 @@ export const unpublishCourse = async (req, res) => {
     }
 
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       course.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -856,7 +856,7 @@ export const getLesson = async (req, res) => {
     // Check if user can access this lesson
     if (
       lesson.courseId.status !== "PUBLISHED" &&
-      req.user?.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user?.role) &&
       lesson.courseId.ownerId?.toString() !== req.user?._id?.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -885,7 +885,7 @@ export const updateLesson = async (req, res) => {
 
     // Check if user can update this lesson
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       lesson.courseId.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -962,7 +962,7 @@ export const deleteLesson = async (req, res) => {
     }
 
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       lesson.courseId.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(res, "Access denied");
@@ -1744,7 +1744,7 @@ export const createSection = async (req, res) => {
 
     if (
       course.ownerId.toString() !== req.user._id.toString() &&
-      req.user.role !== "ADMIN"
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role)
     ) {
       return forbiddenResponse(
         res,
@@ -1804,7 +1804,7 @@ export const getCourseSections = async (req, res) => {
 
     const userId = req.user?._id?.toString();
     const isOwner = userId && course.ownerId.toString() === userId;
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(req.user?.role);
     const isPrivileged = isAdmin || isOwner;
 
     if (
@@ -1877,7 +1877,7 @@ export const updateSection = async (req, res) => {
     // Check permissions
     if (
       course.ownerId.toString() !== req.user._id.toString() &&
-      req.user.role !== "ADMIN"
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role)
     ) {
       return forbiddenResponse(
         res,
@@ -1927,7 +1927,7 @@ export const deleteSection = async (req, res) => {
     // Check permissions
     if (
       course.ownerId.toString() !== req.user._id.toString() &&
-      req.user.role !== "ADMIN"
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role)
     ) {
       return forbiddenResponse(
         res,
@@ -1979,7 +1979,7 @@ export const getSectionLessons = async (req, res) => {
 
     const userId = req.user?._id?.toString();
     const isOwner = userId && course.ownerId.toString() === userId;
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(req.user?.role);
     const isPrivileged = isAdmin || isOwner;
 
     if (
@@ -2060,7 +2060,7 @@ export const createLesson = async (req, res) => {
     // Check permissions
     if (
       course.ownerId.toString() !== req.user._id.toString() &&
-      req.user.role !== "ADMIN"
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role)
     ) {
       return forbiddenResponse(
         res,

@@ -21,7 +21,7 @@ function buildInvitationCopy(user, invitedBy, inviteContext = {}) {
   const { programName = null, cohortName = null } = inviteContext;
   const role = user.role;
 
-  if (role === 'ADMIN') {
+  if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
     const bodyLine = `You have been invited by <strong>${escapeHtml(invitedBy.name)}</strong> to join the <strong>${escapeHtml(brand.platformName)}</strong> as an Administrator.`;
     return {
       subject: `You've been invited to administer ${brand.platformName}`,

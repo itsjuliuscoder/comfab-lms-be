@@ -29,7 +29,7 @@ const createAnnouncementSchema = z.object({
     courseId: z.string().optional(),
     cohortId: z.string().optional(),
     userIds: z.array(z.string()).optional(),
-    roles: z.array(z.enum(['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'])).optional(),
+    roles: z.array(z.enum(['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT'])).optional(),
   }).optional(),
   attachments: z.array(z.object({
     publicId: z.string().optional(),
@@ -56,7 +56,7 @@ const updateAnnouncementSchema = z.object({
     courseId: z.string().optional(),
     cohortId: z.string().optional(),
     userIds: z.array(z.string()).optional(),
-    roles: z.array(z.enum(['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'])).optional(),
+    roles: z.array(z.enum(['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT'])).optional(),
   }).optional(),
   attachments: z.array(z.object({
     publicId: z.string().optional(),

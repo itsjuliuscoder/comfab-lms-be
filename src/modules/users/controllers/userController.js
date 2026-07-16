@@ -10,6 +10,37 @@ import {
   validateInviteAssignment,
 } from '../../../config/email/inviteContext.js';
 
+const SUPER_ADMIN_ROLE = 'SUPER_ADMIN';
+const ADMIN_ROLE = 'ADMIN';
+const isSuperAdmin = (user) => user?.role === SUPER_ADMIN_ROLE;
+const isPlatformAdminRole = (role) => role === SUPER_ADMIN_ROLE || role === ADMIN_ROLE;
+
+function superAdminOnlyResponse(res, message = 'Only a Super Admin can perform this action') {
+  return res.status(403).json({
+    ok: false,
+    error: {
+      code: 'SUPER_ADMIN_REQUIRED',
+      message,
+    },
+  });
+}
+
+function assertCanAssignRole(actor, role) {
+  if (role === SUPER_ADMIN_ROLE && !isSuperAdmin(actor)) {
+    const error = new Error('Only a Super Admin can assign the Super Admin role');
+    error.code = 'SUPER_ADMIN_REQUIRED';
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+function roleAssignmentErrorResponse(res, error) {
+  if (error.code === 'SUPER_ADMIN_REQUIRED') {
+    return superAdminOnlyResponse(res, error.message);
+  }
+  return null;
+}
+
 function inviteValidationErrorResponse(res, error) {
   if (error.code) {
     return res.status(400).json({
@@ -43,7 +74,7 @@ async function buildInviteAssignment({
     }
   }
 
-  const assignment = role === 'ADMIN'
+  const assignment = isPlatformAdminRole(role)
     ? null
     : {
         cohortId: inviteContext.cohortId || null,
@@ -382,6 +413,30 @@ export const getUserById = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const { name, email, role, status } = req.body;
+    const existingUser = await User.findById(req.params.id);
+
+    if (!existingUser) {
+      return notFoundResponse(res, 'User');
+    }
+
+    if (
+      existingUser.role === SUPER_ADMIN_ROLE &&
+      !isSuperAdmin(req.user)
+    ) {
+      return superAdminOnlyResponse(
+        res,
+        'Only a Super Admin can modify another Super Admin'
+      );
+    }
+
+    try {
+      assertCanAssignRole(req.user, role);
+    } catch (roleError) {
+      const response = roleAssignmentErrorResponse(res, roleError);
+      if (response) return response;
+      throw roleError;
+    }
+
     const updates = {};
 
     if (name) updates.name = name;
@@ -395,10 +450,6 @@ export const updateUser = async (req, res) => {
       { new: true, runValidators: true }
     ).select('-password');
 
-    if (!user) {
-      return notFoundResponse(res, 'User');
-    }
-
     return successResponse(res, { user: user.toPublicJSON() }, 'User updated successfully');
   } catch (error) {
     logger.error('Update user error:', error);
@@ -409,6 +460,16 @@ export const updateUser = async (req, res) => {
 // DELETE /users/:id - Delete user (admin)
 export const deleteUser = async (req, res) => {
   try {
+    if (req.params.id === req.user._id.toString()) {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'CANNOT_DELETE_SELF',
+          message: 'A Super Admin cannot delete their own account',
+        },
+      });
+    }
+
     const user = await User.findByIdAndDelete(req.params.id);
     
     if (!user) {
@@ -502,6 +563,18 @@ export const bulkActions = async (req, res) => {
         );
         break;
       case 'delete':
+        if (!isSuperAdmin(req.user)) {
+          return superAdminOnlyResponse(res);
+        }
+        if (userIds.some((userId) => userId === req.user._id.toString())) {
+          return res.status(400).json({
+            ok: false,
+            error: {
+              code: 'CANNOT_DELETE_SELF',
+              message: 'A Super Admin cannot delete their own account',
+            },
+          });
+        }
         result = await User.deleteMany({ _id: { $in: userIds } });
         break;
       case 'resend_invite': {
@@ -630,6 +703,14 @@ export const inviteUser = async (req, res) => {
       roleInCohort = 'MEMBER',
     } = req.body;
 
+    try {
+      assertCanAssignRole(req.user, role);
+    } catch (roleError) {
+      const response = roleAssignmentErrorResponse(res, roleError);
+      if (response) return response;
+      throw roleError;
+    }
+
     // Check if user already exists
     const existingUser = await User.findByEmail(email);
     if (existingUser) {
@@ -746,6 +827,8 @@ export const bulkInviteUsers = async (req, res) => {
           role = 'PARTICIPANT',
           roleInCohort: userRoleInCohort = roleInCohort,
         } = userData;
+
+        assertCanAssignRole(req.user, role);
 
         // Check if user already exists
         const existingUser = await User.findByEmail(email);
@@ -971,6 +1054,8 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
     for (const userData of processedData.users) {
       try {
         const { name, email, role = 'PARTICIPANT', roleInCohort: userRoleInCohort = roleInCohort } = userData;
+
+        assertCanAssignRole(req.user, role);
 
         // Check if user already exists
         const existingUser = await User.findByEmail(email);

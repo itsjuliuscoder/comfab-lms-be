@@ -76,7 +76,7 @@ export const getCourseEnrollments = async (req, res) => {
       courseId: courseId 
     });
     
-    if (req.user.role !== 'ADMIN' && req.user.role !== 'INSTRUCTOR' && !userEnrollment) {
+    if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role) && req.user.role !== 'INSTRUCTOR' && !userEnrollment) {
       return forbiddenResponse(res, 'Access denied. You must be enrolled in this course to view enrollments.');
     }
 
@@ -235,7 +235,7 @@ export const updateEnrollment = async (req, res) => {
     }
 
     // Check if user owns this enrollment or is admin
-    if (enrollment.userId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (enrollment.userId.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return forbiddenResponse(res, 'Access denied');
     }
 
@@ -270,7 +270,7 @@ export const withdrawFromCourse = async (req, res) => {
     }
 
     // Check if user owns this enrollment or is admin
-    if (enrollment.userId.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (enrollment.userId.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return forbiddenResponse(res, 'Access denied');
     }
 
@@ -298,7 +298,7 @@ export const getEnrollmentDetails = async (req, res) => {
     }
 
     // Check if user can access this enrollment
-    if (enrollment.userId._id.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (enrollment.userId._id.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return forbiddenResponse(res, 'Access denied');
     }
 

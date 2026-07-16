@@ -2,13 +2,13 @@
  * One-off bootstrap: create or update a user (default role PARTICIPANT).
  * Password must come from ADMIN_CREATE_PASSWORD (set in .env — never commit).
  * Optional: ADMIN_CREATE_EMAIL (default julius@promptpal.app), ADMIN_CREATE_NAME,
- * ADMIN_CREATE_ROLE (ADMIN | INSTRUCTOR | PARTICIPANT, default PARTICIPANT).
+ * ADMIN_CREATE_ROLE (SUPER_ADMIN | ADMIN | INSTRUCTOR | PARTICIPANT, default PARTICIPANT).
  */
 import { connectDatabase, disconnectDatabase } from '../src/config/database.js';
 import { User } from '../src/modules/users/models/User.js';
 
 const DEFAULT_EMAIL = 'julius@promptpal.app';
-const ALLOWED_ROLES = ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'];
+const ALLOWED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT'];
 const DEFAULT_ROLE = 'PARTICIPANT';
 
 function resolveOptions() {

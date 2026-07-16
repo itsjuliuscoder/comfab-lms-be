@@ -9,6 +9,7 @@ vi.mock('../../../middleware/auth.js', () => ({
 
 vi.mock('../../../middleware/rbac.js', () => ({
   requireAdmin: (_req, _res, next) => next(),
+  requireInstructor: (_req, _res, next) => next(),
 }));
 
 vi.mock('../controllers/adminController.js', () => ({

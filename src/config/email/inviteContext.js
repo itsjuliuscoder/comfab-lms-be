@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 
+const isPlatformAdminRole = (role) => role === 'SUPER_ADMIN' || role === 'ADMIN';
+
 export async function resolveInviteContext({ role, cohortId, programId }) {
   const context = {
     programName: null,
@@ -8,7 +10,7 @@ export async function resolveInviteContext({ role, cohortId, programId }) {
     cohortId: null,
   };
 
-  if (role === 'ADMIN') {
+  if (isPlatformAdminRole(role)) {
     return context;
   }
 
@@ -82,7 +84,7 @@ export async function resolveInviteContextFromAssignment(user) {
 }
 
 export function validateInviteAssignment({ role, cohortId, programId }) {
-  if (role === 'ADMIN') {
+  if (isPlatformAdminRole(role)) {
     if (cohortId || programId) {
       const error = new Error('Admin invites cannot include program or cohort assignment');
       error.code = 'INVALID_ADMIN_INVITE';

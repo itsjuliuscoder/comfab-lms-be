@@ -17,7 +17,7 @@ export async function canAccessCohortChat(user, cohortId) {
     return { allowed: false, reason: "Cohort not found" };
   }
 
-  if (user.role === "ADMIN" || user.role === "INSTRUCTOR") {
+  if (["SUPER_ADMIN", "ADMIN"].includes(user.role) || user.role === "INSTRUCTOR") {
     return { allowed: true, cohort };
   }
 
@@ -37,6 +37,6 @@ export async function canAccessCohortChat(user, cohortId) {
  */
 export function canDeleteCohortMessage(user, message) {
   if (!user || !message) return false;
-  if (user.role === "ADMIN" || user.role === "INSTRUCTOR") return true;
+  if (["SUPER_ADMIN", "ADMIN"].includes(user.role) || user.role === "INSTRUCTOR") return true;
   return message.authorId?.toString() === user._id?.toString();
 }

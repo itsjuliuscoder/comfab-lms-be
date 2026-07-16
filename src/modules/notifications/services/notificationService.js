@@ -170,7 +170,7 @@ export async function markAllRead(userId) {
 
 export async function notifyAdmins(payload) {
   const { User } = await import("../../users/models/User.js");
-  const admins = await User.find({ role: "ADMIN", isActive: true }).select("_id");
+  const admins = await User.find({ role: { $in: ["SUPER_ADMIN", "ADMIN"] }, isActive: true }).select("_id");
   const adminIds = admins.map((admin) => admin._id);
   return createNotificationsForUsers(adminIds, payload);
 }

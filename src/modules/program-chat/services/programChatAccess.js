@@ -27,7 +27,7 @@ export async function canAccessProgramChat(user, programId) {
     return { allowed: false, reason: "Program not found" };
   }
 
-  if (user.role === "ADMIN") {
+  if (["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
     return { allowed: true, program };
   }
 
@@ -72,7 +72,7 @@ export async function canAccessProgramChat(user, programId) {
  */
 export function canDeleteProgramMessage(user, message, program) {
   if (!user || !message) return false;
-  if (user.role === "ADMIN") return true;
+  if (["SUPER_ADMIN", "ADMIN"].includes(user.role)) return true;
   if (
     user.role === "INSTRUCTOR" &&
     program &&

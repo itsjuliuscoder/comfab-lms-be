@@ -169,7 +169,7 @@ export const getAllPrograms = async (req, res) => {
     if (!req.user || req.user.role === "PARTICIPANT") {
       conditions.push({ isPublic: true });
       conditions.push({ status: buildProgramStatusCondition("ACTIVE") });
-    } else if (req.user.role !== "ADMIN") {
+    } else if (!["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
       const visibilityConditions = [{ isPublic: true }];
 
       if (req.user?._id) {
@@ -243,7 +243,7 @@ export const getProgramById = async (req, res) => {
     }
 
     const userId = req.user?._id?.toString();
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(req.user?.role);
     const isOwner = userId && program.ownerId?._id?.toString() === userId;
     const isCoordinator =
       userId && program.coordinatorId?._id?.toString() === userId;
@@ -331,7 +331,7 @@ export const updateProgram = async (req, res) => {
 
     // Check permissions
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       program.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(
@@ -393,7 +393,7 @@ export const deleteProgram = async (req, res) => {
 
     // Check permissions
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       program.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(
@@ -454,7 +454,7 @@ export const getProgramCourses = async (req, res) => {
 
     // Check access permissions
     const userId = req.user?._id?.toString();
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(req.user?.role);
     const isOwner = userId && program.ownerId.toString() === userId;
     const isCoordinator = userId && program.coordinatorId.toString() === userId;
     const includeCohorts = Boolean(isAdmin || isOwner || isCoordinator);
@@ -536,7 +536,7 @@ export const getProgramCohorts = async (req, res) => {
 
     // Check access permissions
     const userId = req.user?._id?.toString();
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = ["SUPER_ADMIN", "ADMIN"].includes(req.user?.role);
     const isOwner = userId && program.ownerId.toString() === userId;
     const isCoordinator = userId && program.coordinatorId.toString() === userId;
 
@@ -604,7 +604,7 @@ export const getProgramStatistics = async (req, res) => {
 
     // Check permissions
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       program.ownerId.toString() !== req.user._id.toString() &&
       program.coordinatorId.toString() !== req.user._id.toString()
     ) {

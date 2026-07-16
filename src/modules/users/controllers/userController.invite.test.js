@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocked = vi.hoisted(() => {
   const User = vi.fn();
   User.findByEmail = vi.fn();
+  User.findById = vi.fn();
+  User.findByIdAndUpdate = vi.fn();
+  User.findByIdAndDelete = vi.fn();
   const UserCohort = vi.fn();
   UserCohort.findOne = vi.fn();
 
@@ -53,9 +56,13 @@ vi.mock("../services/excelService.js", () => ({
   default: mocked.ExcelService,
 }));
 
-const { inviteUser, bulkInviteUsers, bulkInviteUsersFromExcel } = await import(
-  "./userController.js"
-);
+const {
+  inviteUser,
+  bulkInviteUsers,
+  bulkInviteUsersFromExcel,
+  updateUser,
+  deleteUser,
+} = await import("./userController.js");
 
 const createRes = () => {
   const res = {};
@@ -68,6 +75,9 @@ describe("userController.inviteUser", () => {
   beforeEach(() => {
     mocked.User.mockReset();
     mocked.User.findByEmail.mockReset();
+    mocked.User.findById.mockReset();
+    mocked.User.findByIdAndUpdate.mockReset();
+    mocked.User.findByIdAndDelete.mockReset();
     mocked.Cohort.findById.mockReset();
     mocked.Program.findById.mockReset();
     mocked.UserCohort.mockReset();
@@ -221,6 +231,75 @@ describe("userController.inviteUser", () => {
         }),
       })
     );
+  });
+
+  it("rejects admin inviting a Super Admin", async () => {
+    mocked.User.findByEmail.mockResolvedValue(null);
+
+    const req = {
+      body: {
+        name: "Super Admin Candidate",
+        email: "super@example.com",
+        role: "SUPER_ADMIN",
+      },
+      user: {
+        _id: "admin-user-1",
+        role: "ADMIN",
+      },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(mocked.User).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: "SUPER_ADMIN_REQUIRED",
+        }),
+      })
+    );
+  });
+
+  it("allows Super Admin inviting another Super Admin", async () => {
+    mocked.User.findByEmail.mockResolvedValue(null);
+    mocked.User.mockImplementation(function User(data) {
+      Object.assign(this, data);
+      this._id = "super-user-2";
+      this.save = vi.fn().mockResolvedValue(this);
+      this.toPublicJSON = vi.fn(() => ({
+        id: this._id,
+        name: this.name,
+        email: this.email,
+        role: this.role,
+        status: this.status,
+      }));
+    });
+
+    const req = {
+      body: {
+        name: "Super Admin Candidate",
+        email: "super@example.com",
+        role: "SUPER_ADMIN",
+      },
+      user: {
+        _id: "super-user-1",
+        role: "SUPER_ADMIN",
+        name: "Root Admin",
+        email: "root@example.com",
+      },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(mocked.User).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "SUPER_ADMIN",
+      })
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
   });
 
   it("assigns an existing participant to another program and cohort", async () => {
@@ -529,6 +608,134 @@ describe("userController.inviteUser", () => {
             successful: 1,
             skipped: 0,
           }),
+        }),
+      })
+    );
+  });
+});
+
+describe("userController Super Admin restrictions", () => {
+  beforeEach(() => {
+    mocked.User.mockReset();
+    mocked.User.findByEmail.mockReset();
+    mocked.User.findById.mockReset();
+    mocked.User.findByIdAndUpdate.mockReset();
+    mocked.User.findByIdAndDelete.mockReset();
+  });
+
+  it("rejects admin promoting a user to Super Admin", async () => {
+    mocked.User.findById.mockResolvedValue({
+      _id: "participant-1",
+      role: "PARTICIPANT",
+    });
+
+    const req = {
+      params: { id: "participant-1" },
+      body: { role: "SUPER_ADMIN" },
+      user: { _id: "admin-1", role: "ADMIN" },
+    };
+    const res = createRes();
+
+    await updateUser(req, res);
+
+    expect(mocked.User.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: "SUPER_ADMIN_REQUIRED",
+        }),
+      })
+    );
+  });
+
+  it("allows Super Admin promoting a user to Super Admin", async () => {
+    mocked.User.findById.mockResolvedValue({
+      _id: "participant-1",
+      role: "PARTICIPANT",
+    });
+    mocked.User.findByIdAndUpdate.mockReturnValue({
+      select: vi.fn().mockResolvedValue({
+        toPublicJSON: vi.fn(() => ({
+          id: "participant-1",
+          role: "SUPER_ADMIN",
+        })),
+      }),
+    });
+
+    const req = {
+      params: { id: "participant-1" },
+      body: { role: "SUPER_ADMIN" },
+      user: { _id: "super-1", role: "SUPER_ADMIN" },
+    };
+    const res = createRes();
+
+    await updateUser(req, res);
+
+    expect(mocked.User.findByIdAndUpdate).toHaveBeenCalledWith(
+      "participant-1",
+      { role: "SUPER_ADMIN" },
+      { new: true, runValidators: true }
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: true })
+    );
+  });
+
+  it("rejects admin editing an existing Super Admin", async () => {
+    mocked.User.findById.mockResolvedValue({
+      _id: "super-2",
+      role: "SUPER_ADMIN",
+    });
+
+    const req = {
+      params: { id: "super-2" },
+      body: { name: "Changed" },
+      user: { _id: "admin-1", role: "ADMIN" },
+    };
+    const res = createRes();
+
+    await updateUser(req, res);
+
+    expect(mocked.User.findByIdAndUpdate).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it("allows Super Admin deleting another user", async () => {
+    mocked.User.findByIdAndDelete.mockResolvedValue({
+      _id: "participant-1",
+      role: "PARTICIPANT",
+    });
+
+    const req = {
+      params: { id: "participant-1" },
+      user: { _id: { toString: () => "super-1" }, role: "SUPER_ADMIN" },
+    };
+    const res = createRes();
+
+    await deleteUser(req, res);
+
+    expect(mocked.User.findByIdAndDelete).toHaveBeenCalledWith("participant-1");
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: true })
+    );
+  });
+
+  it("rejects Super Admin deleting their own account", async () => {
+    const req = {
+      params: { id: "super-1" },
+      user: { _id: { toString: () => "super-1" }, role: "SUPER_ADMIN" },
+    };
+    const res = createRes();
+
+    await deleteUser(req, res);
+
+    expect(mocked.User.findByIdAndDelete).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: "CANNOT_DELETE_SELF",
         }),
       })
     );

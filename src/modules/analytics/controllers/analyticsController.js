@@ -33,7 +33,7 @@ export const getPlatformAnalytics = async (req, res) => {
         total: totalUsers,
         active: activeUsers,
         roles: {
-          admins: await User.countDocuments({ role: 'ADMIN' }),
+          admins: await User.countDocuments({ role: { $in: ['SUPER_ADMIN', 'ADMIN'] } }),
           instructors: await User.countDocuments({ role: 'INSTRUCTOR' }),
           participants: await User.countDocuments({ role: 'PARTICIPANT' })
         }

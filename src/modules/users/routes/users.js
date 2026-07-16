@@ -3,7 +3,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import { config } from '../../../config/env.js';
 import { requireAuth } from '../../../middleware/auth.js';
-import { requireAdmin, requireRole } from '../../../middleware/rbac.js';
+import { requireAdmin, requireInstructor, requireSuperAdmin } from '../../../middleware/rbac.js';
 import { validateBody, validateQuery } from '../../../middleware/validation.js';
 import { asyncHandler } from '../../../middleware/error.js';
 import {
@@ -86,7 +86,7 @@ const updatePreferencesSchema = z.object({
 const updateUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(100, 'Name cannot exceed 100 characters').optional(),
   email: z.string().email('Invalid email address').optional(),
-  role: z.enum(['ADMIN', 'INSTRUCTOR', 'PARTICIPANT']).optional(),
+  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT']).optional(),
   status: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
 });
 
@@ -98,7 +98,7 @@ const bulkActionsSchema = z.object({
 const inviteUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(100, 'Name cannot exceed 100 characters'),
   email: z.string().email('Invalid email address'),
-  role: z.enum(['ADMIN', 'INSTRUCTOR', 'PARTICIPANT']).default('PARTICIPANT'),
+  role: z.enum(['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT']).default('PARTICIPANT'),
   cohortId: z.string().min(1, 'Cohort ID must be provided if specified').optional(),
   programId: z.string().min(1, 'Program ID must be provided if specified').optional(),
   roleInCohort: z.enum(['LEADER', 'MEMBER', 'MENTOR']).default('MEMBER').optional(),
@@ -108,7 +108,7 @@ const bulkInviteSchema = z.object({
   users: z.array(z.object({
     name: z.string().min(2, 'Name must be at least 2 characters').max(100, 'Name cannot exceed 100 characters'),
     email: z.string().email('Invalid email address'),
-    role: z.enum(['ADMIN', 'INSTRUCTOR', 'PARTICIPANT']).default('PARTICIPANT'),
+    role: z.enum(['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT']).default('PARTICIPANT'),
     roleInCohort: z.enum(['LEADER', 'MEMBER', 'MENTOR']).default('MEMBER').optional(),
   })).min(1, 'At least one user is required').max(100, 'Maximum 100 users can be invited at once'),
   cohortId: z.string().min(1, 'Cohort ID must be provided if specified').optional(),
@@ -133,12 +133,12 @@ router.post('/bulk-invite-excel', requireAuth, requireAdmin, excelUpload.single(
 // Public routes (no authentication required)
 router.get('/bulk-invite-template', asyncHandler(downloadBulkInviteTemplate));
 
-// Admin-only routes (require authentication)
-router.get('/', requireAuth, requireAdmin, asyncHandler(getAllUsers));
-router.get('/search', requireAuth, requireAdmin, asyncHandler(searchUsers));
+// User directory routes for admin management and instructor email recipient selection
+router.get('/', requireAuth, requireInstructor, asyncHandler(getAllUsers));
+router.get('/search', requireAuth, requireInstructor, asyncHandler(searchUsers));
 router.get('/:id', requireAuth, requireAdmin, asyncHandler(getUserById));
 router.patch('/:id', requireAuth, requireAdmin, validateBody(updateUserSchema), asyncHandler(updateUser));
-router.delete('/:id', requireAuth, requireAdmin, asyncHandler(deleteUser));
+router.delete('/:id', requireAuth, requireSuperAdmin, asyncHandler(deleteUser));
 router.post('/:id/resend-invite', requireAuth, requireAdmin, asyncHandler(resendInvite));
 router.post('/bulk-actions', requireAuth, requireAdmin, validateBody(bulkActionsSchema), asyncHandler(bulkActions));
 router.post('/:id/verify', requireAuth, requireAdmin, asyncHandler(verifyInstructor));

@@ -26,7 +26,7 @@ export async function getAnnouncementRecipientIds(announcement) {
   }
 
   if (visibility === "ADMINS") {
-    const admins = await User.find({ role: "ADMIN", status: "ACTIVE" }).select("_id");
+    const admins = await User.find({ role: { $in: ["SUPER_ADMIN", "ADMIN"] }, status: "ACTIVE" }).select("_id");
     return admins
       .map((user) => user._id.toString())
       .filter((id) => id !== authorId);
@@ -34,7 +34,7 @@ export async function getAnnouncementRecipientIds(announcement) {
 
   if (visibility === "INSTRUCTORS") {
     const instructors = await User.find({
-      role: { $in: ["INSTRUCTOR", "ADMIN"] },
+      role: { $in: ["SUPER_ADMIN", "ADMIN", "INSTRUCTOR"] },
       status: "ACTIVE",
     }).select("_id");
     return instructors
@@ -46,7 +46,7 @@ export async function getAnnouncementRecipientIds(announcement) {
   if (target.roles?.length) {
     query.role = { $in: target.roles };
   } else if (visibility === "PUBLIC") {
-    query.role = { $in: ["PARTICIPANT", "INSTRUCTOR", "ADMIN"] };
+    query.role = { $in: ["PARTICIPANT", "INSTRUCTOR", "ADMIN", "SUPER_ADMIN"] };
   }
 
   if (target.cohortId) {

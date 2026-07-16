@@ -35,7 +35,7 @@ export async function getLessonInCourse(lessonId, courseId) {
  */
 export async function canAccessLessonProgress(user, courseId) {
   if (!user) return false;
-  if (user.role === "ADMIN") return true;
+  if (["SUPER_ADMIN", "ADMIN"].includes(user.role)) return true;
 
   const course = await Course.findById(courseId).select("ownerId");
   if (!course) return false;

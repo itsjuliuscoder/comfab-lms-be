@@ -48,7 +48,7 @@ const announcementSchema = new mongoose.Schema({
     }],
     roles: [{
       type: String,
-      enum: ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'],
+      enum: ['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT'],
     }],
   },
   attachments: [{
@@ -153,7 +153,7 @@ announcementSchema.statics.getAnnouncementsForUser = async function(userId, user
       { visibility: 'PUBLIC' },
       { visibility: 'ENROLLED_USERS', 'targetAudience.courseId': { $in: enrolledCourses } },
       { visibility: 'INSTRUCTORS', 'targetAudience.roles': { $in: ['INSTRUCTOR', 'ADMIN'] } },
-      { visibility: 'ADMINS', 'targetAudience.roles': 'ADMIN' },
+      { visibility: 'ADMINS', 'targetAudience.roles': { $in: ['SUPER_ADMIN', 'ADMIN'] } },
       { visibility: 'SPECIFIC_USERS', 'targetAudience.userIds': userId },
     ],
     $and: [
@@ -252,7 +252,7 @@ announcementSchema.statics.getUnreadCount = async function(userId, userRole, enr
       { visibility: 'PUBLIC' },
       { visibility: 'ENROLLED_USERS', 'targetAudience.courseId': { $in: enrolledCourses } },
       { visibility: 'INSTRUCTORS', 'targetAudience.roles': { $in: ['INSTRUCTOR', 'ADMIN'] } },
-      { visibility: 'ADMINS', 'targetAudience.roles': 'ADMIN' },
+      { visibility: 'ADMINS', 'targetAudience.roles': { $in: ['SUPER_ADMIN', 'ADMIN'] } },
       { visibility: 'SPECIFIC_USERS', 'targetAudience.userIds': userId },
     ],
     'readBy.userId': { $ne: userId },

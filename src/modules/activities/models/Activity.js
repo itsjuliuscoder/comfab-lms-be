@@ -95,7 +95,7 @@ const activitySchema = new mongoose.Schema({
     },
     role: {
       type: String,
-      enum: ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'],
+      enum: ['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT'],
       required: [true, 'Actor role is required'],
     },
   },

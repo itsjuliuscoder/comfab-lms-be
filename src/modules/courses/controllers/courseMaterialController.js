@@ -235,7 +235,7 @@ export const updateCourseMaterial = async (req, res) => {
     }
 
     // Check permissions (only uploader or admin can update)
-    if (material.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (material.uploadedBy.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return errorResponse(res, { message: 'Not authorized to update this material' }, 403);
     }
 
@@ -289,7 +289,7 @@ export const deleteCourseMaterial = async (req, res) => {
     }
 
     // Check permissions (only uploader or admin can delete)
-    if (material.uploadedBy.toString() !== req.user._id.toString() && req.user.role !== 'ADMIN') {
+    if (material.uploadedBy.toString() !== req.user._id.toString() && !['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
       return errorResponse(res, { message: 'Not authorized to delete this material' }, 403);
     }
 

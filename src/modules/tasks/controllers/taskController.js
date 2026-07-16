@@ -45,7 +45,7 @@ export const createTask = async (req, res) => {
     }
 
     if (
-      req.user.role !== "ADMIN" &&
+      !["SUPER_ADMIN", "ADMIN"].includes(req.user.role) &&
       course.ownerId.toString() !== req.user._id.toString()
     ) {
       return forbiddenResponse(

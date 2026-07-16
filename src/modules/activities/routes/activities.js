@@ -56,7 +56,7 @@ const createActivitySchema = z.object({
     userId: z.string().optional(),
     name: z.string().min(1, 'Actor name is required').max(100, 'Actor name cannot exceed 100 characters'),
     email: z.string().email('Invalid email format').max(100, 'Email cannot exceed 100 characters'),
-    role: z.enum(['ADMIN', 'INSTRUCTOR', 'PARTICIPANT', 'ANONYMOUS']).optional(),
+    role: z.enum(['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT', 'ANONYMOUS']).optional(),
   }).optional(),
   target: z.object({
     type: z.enum(['USER', 'COURSE', 'LESSON', 'ENROLLMENT', 'COHORT', 'FILE', 'NOTE', 'DISCUSSION', 'SYSTEM', 'OTHER']),

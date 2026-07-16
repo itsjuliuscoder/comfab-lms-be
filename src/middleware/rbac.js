@@ -1,5 +1,15 @@
 import { forbiddenResponse } from '../utils/response.js';
 
+export const SUPER_ADMIN_ROLE = 'SUPER_ADMIN';
+export const ADMIN_ROLE = 'ADMIN';
+export const INSTRUCTOR_ROLE = 'INSTRUCTOR';
+export const PARTICIPANT_ROLE = 'PARTICIPANT';
+
+export const isSuperAdminRole = (role) => role === SUPER_ADMIN_ROLE;
+export const isAdminRole = (role) => role === SUPER_ADMIN_ROLE || role === ADMIN_ROLE;
+export const isInstructorRole = (role) => isAdminRole(role) || role === INSTRUCTOR_ROLE;
+export const isParticipantRole = (role) => isInstructorRole(role) || role === PARTICIPANT_ROLE;
+
 export const requireRole = (...roles) => {
   const allowedRoles = roles.flat();
 
@@ -16,16 +26,20 @@ export const requireRole = (...roles) => {
   };
 };
 
+export const requireSuperAdmin = (req, res, next) => {
+  return requireRole(SUPER_ADMIN_ROLE)(req, res, next);
+};
+
 export const requireAdmin = (req, res, next) => {
-  return requireRole('ADMIN')(req, res, next);
+  return requireRole(SUPER_ADMIN_ROLE, ADMIN_ROLE)(req, res, next);
 };
 
 export const requireInstructor = (req, res, next) => {
-  return requireRole('ADMIN', 'INSTRUCTOR')(req, res, next);
+  return requireRole(SUPER_ADMIN_ROLE, ADMIN_ROLE, INSTRUCTOR_ROLE)(req, res, next);
 };
 
 export const requireParticipant = (req, res, next) => {
-  return requireRole('ADMIN', 'INSTRUCTOR', 'PARTICIPANT')(req, res, next);
+  return requireRole(SUPER_ADMIN_ROLE, ADMIN_ROLE, INSTRUCTOR_ROLE, PARTICIPANT_ROLE)(req, res, next);
 };
 
 export const requireOwnerOrAdmin = (resourceOwnerField = 'ownerId') => {
@@ -35,7 +49,7 @@ export const requireOwnerOrAdmin = (resourceOwnerField = 'ownerId') => {
     }
 
     // Admins can access everything
-    if (req.user.role === 'ADMIN') {
+    if (isAdminRole(req.user.role)) {
       return next();
     }
 
@@ -57,7 +71,7 @@ export const requireCohortMember = (cohortIdField = 'cohortId') => {
     }
 
     // Admins can access everything
-    if (req.user.role === 'ADMIN') {
+    if (isAdminRole(req.user.role)) {
       return next();
     }
 
@@ -90,7 +104,7 @@ export const requireCourseEnrollment = (courseIdField = 'courseId') => {
     }
 
     // Admins and instructors can access everything
-    if (req.user.role === 'ADMIN' || req.user.role === 'INSTRUCTOR') {
+    if (isInstructorRole(req.user.role)) {
       return next();
     }
 

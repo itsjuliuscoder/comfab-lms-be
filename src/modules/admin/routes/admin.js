@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { requireAuth } from '../../../middleware/auth.js';
-import { requireAdmin } from '../../../middleware/rbac.js';
+import { requireAdmin, requireInstructor } from '../../../middleware/rbac.js';
 import { validateBody } from '../../../middleware/validation.js';
 import { asyncHandler } from '../../../middleware/error.js';
 import { z } from 'zod';
@@ -67,20 +67,21 @@ const emailHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 });
 
-// All admin routes require authentication and admin role
-router.use(requireAuth, requireAdmin);
+// All admin routes require authentication. Individual route groups define
+// whether instructors can access them.
+router.use(requireAuth);
 
 // Dashboard Statistics
-router.get('/dashboard', asyncHandler(getDashboardStats));
+router.get('/dashboard', requireAdmin, asyncHandler(getDashboardStats));
 
 // Detailed Statistics
-router.get('/stats/users', asyncHandler(getUserStatistics));
-router.get('/stats/courses', asyncHandler(getCourseStatistics));
-router.get('/stats/enrollments', asyncHandler(getEnrollmentStatistics));
-router.get('/stats/completion', asyncHandler(getCompletionStatistics));
+router.get('/stats/users', requireAdmin, asyncHandler(getUserStatistics));
+router.get('/stats/courses', requireAdmin, asyncHandler(getCourseStatistics));
+router.get('/stats/enrollments', requireAdmin, asyncHandler(getEnrollmentStatistics));
+router.get('/stats/completion', requireAdmin, asyncHandler(getCompletionStatistics));
 
 // Email Management Routes
-router.get('/email/provider', asyncHandler(async (req, res) => {
+router.get('/email/provider', requireAdmin, asyncHandler(async (req, res) => {
   const provider = getCurrentProvider();
   res.json({
     ok: true,
@@ -89,7 +90,7 @@ router.get('/email/provider', asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/email/provider', validateBody(switchProviderSchema), asyncHandler(async (req, res) => {
+router.post('/email/provider', requireAdmin, validateBody(switchProviderSchema), asyncHandler(async (req, res) => {
   const { provider } = req.body;
   setEmailProvider(provider);
   res.json({
@@ -99,7 +100,7 @@ router.post('/email/provider', validateBody(switchProviderSchema), asyncHandler(
   });
 }));
 
-router.post('/email/test', validateBody(testEmailSchema), asyncHandler(async (req, res) => {
+router.post('/email/test', requireAdmin, validateBody(testEmailSchema), asyncHandler(async (req, res) => {
   const { email, provider } = req.body;
   
   // Switch provider if specified
@@ -116,21 +117,23 @@ router.post('/email/test', validateBody(testEmailSchema), asyncHandler(async (re
   });
 }));
 
-router.post('/email/send', validateBody(sendAdminEmailSchema), asyncHandler(sendAdminEmailHandler));
+router.post('/email/send', requireInstructor, validateBody(sendAdminEmailSchema), asyncHandler(sendAdminEmailHandler));
 
 router.post(
   '/email/bulk-preview',
+  requireInstructor,
   excelUpload.single('emailFile'),
   asyncHandler(bulkPreviewAdminEmailHandler)
 );
 
 router.post(
   '/email/bulk-upload',
+  requireInstructor,
   excelUpload.single('emailFile'),
   asyncHandler(bulkUploadAdminEmailHandler)
 );
 
-router.get('/email/history', asyncHandler(async (req, res) => {
+router.get('/email/history', requireInstructor, asyncHandler(async (req, res) => {
   const parsed = emailHistoryQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({
@@ -144,6 +147,6 @@ router.get('/email/history', asyncHandler(async (req, res) => {
   return getAdminEmailHistoryHandler(req, res);
 }));
 
-router.get('/email/template', asyncHandler(downloadAdminEmailTemplateHandler));
+router.get('/email/template', requireInstructor, asyncHandler(downloadAdminEmailTemplateHandler));
 
 export default router;

@@ -119,8 +119,8 @@ class ExcelService {
     };
     
     // Validate role
-    if (!['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'].includes(userData.role)) {
-      throw new Error('Invalid role. Must be ADMIN, INSTRUCTOR, or PARTICIPANT');
+    if (!['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT'].includes(userData.role)) {
+      throw new Error('Invalid role. Must be SUPER_ADMIN, ADMIN, INSTRUCTOR, or PARTICIPANT');
     }
     
     // Validate cohort role
@@ -138,7 +138,7 @@ class ExcelService {
    */
   static parseRole(role) {
     const roleStr = role.toString().trim().toUpperCase();
-    const validRoles = ['ADMIN', 'INSTRUCTOR', 'PARTICIPANT'];
+    const validRoles = ['SUPER_ADMIN', 'ADMIN', 'INSTRUCTOR', 'PARTICIPANT'];
     
     if (validRoles.includes(roleStr)) {
       return roleStr;
@@ -147,6 +147,8 @@ class ExcelService {
     // Handle common variations
     const roleMap = {
       'ADMINISTRATOR': 'ADMIN',
+      'SUPER ADMIN': 'SUPER_ADMIN',
+      'SUPERADMIN': 'SUPER_ADMIN',
       'TEACHER': 'INSTRUCTOR',
       'FACILITATOR': 'INSTRUCTOR',
       'STUDENT': 'PARTICIPANT',
@@ -222,7 +224,7 @@ class ExcelService {
         ['1. Fill in the user details below'],
         ['2. Required fields: Name, Email'],
         ['3. Optional fields: Role, RoleInCohort'],
-        ['4. Valid roles: ADMIN, INSTRUCTOR, PARTICIPANT'],
+        ['4. Valid roles: SUPER_ADMIN, ADMIN, INSTRUCTOR, PARTICIPANT'],
         ['5. Valid cohort roles: LEADER, MEMBER, MENTOR'],
         ['6. Remove sample data before uploading'],
         [''],
