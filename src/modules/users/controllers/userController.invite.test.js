@@ -13,15 +13,19 @@ const mocked = vi.hoisted(() => {
     User,
     Cohort: {
       findById: vi.fn(),
+      findOne: vi.fn(),
     },
     Program: {
       findById: vi.fn(),
+      findOne: vi.fn(),
+      find: vi.fn(),
     },
     UserCohort,
     enrollUserInProgram: vi.fn(),
     ExcelService: {
       validateFile: vi.fn(),
       processExcelFile: vi.fn(),
+      generateTemplate: vi.fn(),
     },
     sendInvitationEmail: vi.fn(),
   };
@@ -62,12 +66,15 @@ const {
   bulkInviteUsersFromExcel,
   updateUser,
   deleteUser,
+  downloadBulkInviteTemplate,
 } = await import("./userController.js");
 
 const createRes = () => {
   const res = {};
   res.status = vi.fn(() => res);
   res.json = vi.fn(() => res);
+  res.setHeader = vi.fn(() => res);
+  res.send = vi.fn(() => res);
   return res;
 };
 
@@ -79,15 +86,26 @@ describe("userController.inviteUser", () => {
     mocked.User.findByIdAndUpdate.mockReset();
     mocked.User.findByIdAndDelete.mockReset();
     mocked.Cohort.findById.mockReset();
+    mocked.Cohort.findOne.mockReset();
     mocked.Program.findById.mockReset();
+    mocked.Program.findOne.mockReset();
+    mocked.Program.find.mockReset();
     mocked.UserCohort.mockReset();
     mocked.UserCohort.findOne.mockReset();
     mocked.enrollUserInProgram.mockReset();
     mocked.ExcelService.validateFile.mockReset();
     mocked.ExcelService.processExcelFile.mockReset();
+    mocked.ExcelService.generateTemplate.mockReset();
     mocked.sendInvitationEmail.mockReset();
     mocked.Cohort.findById.mockResolvedValue(null);
+    mocked.Cohort.findOne.mockReset();
     mocked.Program.findById.mockResolvedValue(null);
+    mocked.Program.findOne.mockReset();
+    mocked.Program.find.mockReturnValue({
+      sort: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([]),
+    });
     mocked.UserCohort.findOne.mockResolvedValue(null);
     mocked.UserCohort.mockImplementation(function UserCohort(data) {
       Object.assign(this, data);
@@ -95,6 +113,7 @@ describe("userController.inviteUser", () => {
       this.save = vi.fn().mockResolvedValue(this);
     });
     mocked.ExcelService.validateFile.mockReturnValue(undefined);
+    mocked.ExcelService.generateTemplate.mockReturnValue(Buffer.from("template"));
   });
 
   it("returns 400 for an invalid cohort ID", async () => {
@@ -612,6 +631,242 @@ describe("userController.inviteUser", () => {
       })
     );
   });
+
+  it("uses row-level programCode and cohortName before modal fallback during Excel invite", async () => {
+    const modalProgramId = "507f1f77bcf86cd799439011";
+    const modalCohortId = "507f1f77bcf86cd799439012";
+    const rowProgramId = "507f1f77bcf86cd799439013";
+    const rowCohortId = "507f1f77bcf86cd799439014";
+
+    mocked.ExcelService.processExcelFile.mockReturnValue({
+      users: [
+        {
+          name: "Row Level User",
+          email: "row@example.com",
+          role: "PARTICIPANT",
+          programCode: "ROW-101",
+          cohortName: "Row Cohort",
+          roleInCohort: "MEMBER",
+        },
+      ],
+      errors: [],
+      totalRows: 1,
+      validRows: 1,
+      invalidRows: 0,
+    });
+    mocked.User.findByEmail.mockResolvedValue(null);
+    mocked.Program.findOne.mockReturnValue({
+      select: vi.fn().mockResolvedValue({
+        _id: { toString: () => rowProgramId },
+        code: "ROW-101",
+        name: "Row Program",
+      }),
+    });
+    mocked.Cohort.findOne.mockReturnValue({
+      select: vi.fn().mockResolvedValue({
+        _id: { toString: () => rowCohortId },
+        name: "Row Cohort",
+        programId: { toString: () => rowProgramId },
+      }),
+    });
+    mocked.Cohort.findById.mockResolvedValue({
+      _id: { toString: () => rowCohortId },
+      name: "Row Cohort",
+      programId: { toString: () => rowProgramId },
+      isFull: vi.fn(() => false),
+    });
+    mocked.Program.findById.mockResolvedValue({
+      _id: { toString: () => rowProgramId },
+      name: "Row Program",
+    });
+    mocked.User.mockImplementation(function User(data) {
+      Object.assign(this, data);
+      this._id = "invited-user-1";
+      this.save = vi.fn().mockResolvedValue(this);
+    });
+
+    const req = {
+      file: {
+        buffer: Buffer.from("fake"),
+        originalname: "bulk.xlsx",
+      },
+      body: {
+        programId: modalProgramId,
+        cohortId: modalCohortId,
+        sendInvitationEmail: "false",
+      },
+      user: { _id: "admin-user-1", role: "ADMIN" },
+    };
+    const res = createRes();
+
+    await bulkInviteUsersFromExcel(req, res);
+
+    expect(mocked.User).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cohortAssignment: expect.objectContaining({
+          programId: rowProgramId,
+          cohortId: rowCohortId,
+        }),
+      })
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          summary: expect.objectContaining({ successful: 1, failed: 0 }),
+        }),
+      })
+    );
+  });
+
+  it("keeps modal program and cohort fallback for older Excel templates", async () => {
+    const programId = "507f1f77bcf86cd799439012";
+    const cohortId = "507f1f77bcf86cd799439013";
+
+    mocked.ExcelService.processExcelFile.mockReturnValue({
+      users: [
+        {
+          name: "Fallback User",
+          email: "fallback@example.com",
+          role: "PARTICIPANT",
+          roleInCohort: "MEMBER",
+        },
+      ],
+      errors: [],
+      totalRows: 1,
+      validRows: 1,
+      invalidRows: 0,
+    });
+    mocked.User.findByEmail.mockResolvedValue(null);
+    mocked.Cohort.findById.mockResolvedValue({
+      _id: { toString: () => cohortId },
+      name: "Fallback Cohort",
+      programId: { toString: () => programId },
+      isFull: vi.fn(() => false),
+    });
+    mocked.Program.findById.mockResolvedValue({
+      _id: { toString: () => programId },
+      name: "Fallback Program",
+    });
+    mocked.User.mockImplementation(function User(data) {
+      Object.assign(this, data);
+      this._id = "fallback-user-1";
+      this.save = vi.fn().mockResolvedValue(this);
+    });
+
+    const req = {
+      file: { buffer: Buffer.from("fake"), originalname: "bulk.xlsx" },
+      body: { programId, cohortId, sendInvitationEmail: "false" },
+      user: { _id: "admin-user-1", role: "ADMIN" },
+    };
+    const res = createRes();
+
+    await bulkInviteUsersFromExcel(req, res);
+
+    expect(mocked.Program.findOne).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          summary: expect.objectContaining({ successful: 1, failed: 0 }),
+        }),
+      })
+    );
+  });
+
+  it("fails only the affected Excel row for an invalid programCode", async () => {
+    mocked.ExcelService.processExcelFile.mockReturnValue({
+      users: [
+        {
+          name: "Bad Program",
+          email: "bad-program@example.com",
+          role: "PARTICIPANT",
+          programCode: "NOPE",
+          cohortName: "Cohort 1",
+        },
+      ],
+      errors: [],
+      totalRows: 1,
+      validRows: 1,
+      invalidRows: 0,
+    });
+    mocked.Program.findOne.mockReturnValue({
+      select: vi.fn().mockResolvedValue(null),
+    });
+
+    const req = {
+      file: { buffer: Buffer.from("fake"), originalname: "bulk.xlsx" },
+      body: { sendInvitationEmail: "false" },
+      user: { _id: "admin-user-1", role: "ADMIN" },
+    };
+    const res = createRes();
+
+    await bulkInviteUsersFromExcel(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          results: expect.objectContaining({
+            failed: [
+              expect.objectContaining({
+                email: "bad-program@example.com",
+                reason: expect.stringContaining('Program code "NOPE" was not found'),
+              }),
+            ],
+          }),
+          summary: expect.objectContaining({ successful: 0, failed: 1 }),
+        }),
+      })
+    );
+  });
+
+  it("fails participant Excel rows without a resolved cohort", async () => {
+    const rowProgramId = "507f1f77bcf86cd799439013";
+    mocked.ExcelService.processExcelFile.mockReturnValue({
+      users: [
+        {
+          name: "No Cohort",
+          email: "no-cohort@example.com",
+          role: "PARTICIPANT",
+          programCode: "ROW-101",
+        },
+      ],
+      errors: [],
+      totalRows: 1,
+      validRows: 1,
+      invalidRows: 0,
+    });
+    mocked.Program.findOne.mockReturnValue({
+      select: vi.fn().mockResolvedValue({
+        _id: { toString: () => rowProgramId },
+        code: "ROW-101",
+        name: "Row Program",
+      }),
+    });
+
+    const req = {
+      file: { buffer: Buffer.from("fake"), originalname: "bulk.xlsx" },
+      body: { sendInvitationEmail: "false" },
+      user: { _id: "admin-user-1", role: "ADMIN" },
+    };
+    const res = createRes();
+
+    await bulkInviteUsersFromExcel(req, res);
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          results: expect.objectContaining({
+            failed: [
+              expect.objectContaining({
+                email: "no-cohort@example.com",
+                reason: "Cohort is required when inviting a participant",
+              }),
+            ],
+          }),
+          summary: expect.objectContaining({ successful: 0, failed: 1 }),
+        }),
+      })
+    );
+  });
 });
 
 describe("userController Super Admin restrictions", () => {
@@ -739,5 +994,53 @@ describe("userController Super Admin restrictions", () => {
         }),
       })
     );
+  });
+});
+
+describe("userController.downloadBulkInviteTemplate", () => {
+  beforeEach(() => {
+    mocked.ExcelService.generateTemplate.mockReset();
+    mocked.ExcelService.generateTemplate.mockReturnValue(Buffer.from("template"));
+    mocked.Program.find.mockReturnValue({
+      sort: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([
+        { code: "AIM-101", name: "AI Masterclass" },
+      ]),
+    });
+  });
+
+  it("includes Super Admin role options for Super Admin downloads", async () => {
+    const req = {
+      user: { _id: "super-1", role: "SUPER_ADMIN" },
+    };
+    const res = createRes();
+
+    await downloadBulkInviteTemplate(req, res);
+
+    expect(mocked.ExcelService.generateTemplate).toHaveBeenCalledWith({
+      includeSuperAdmin: true,
+      programs: [{ code: "AIM-101", name: "AI Masterclass" }],
+    });
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    expect(res.send).toHaveBeenCalledWith(Buffer.from("template"));
+  });
+
+  it("omits Super Admin role options for Admin downloads", async () => {
+    const req = {
+      user: { _id: "admin-1", role: "ADMIN" },
+    };
+    const res = createRes();
+
+    await downloadBulkInviteTemplate(req, res);
+
+    expect(mocked.ExcelService.generateTemplate).toHaveBeenCalledWith({
+      includeSuperAdmin: false,
+      programs: [{ code: "AIM-101", name: "AI Masterclass" }],
+    });
+    expect(res.send).toHaveBeenCalledWith(Buffer.from("template"));
   });
 });

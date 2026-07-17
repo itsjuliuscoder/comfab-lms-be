@@ -14,6 +14,7 @@ const SUPER_ADMIN_ROLE = 'SUPER_ADMIN';
 const ADMIN_ROLE = 'ADMIN';
 const isSuperAdmin = (user) => user?.role === SUPER_ADMIN_ROLE;
 const isPlatformAdminRole = (role) => role === SUPER_ADMIN_ROLE || role === ADMIN_ROLE;
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function superAdminOnlyResponse(res, message = 'Only a Super Admin can perform this action') {
   return res.status(403).json({
@@ -179,6 +180,57 @@ async function assignExistingParticipantToProgram({
     wasAlreadyAssigned:
       !programAssignment.isNew && !cohortAssignment.isNew,
   };
+}
+
+async function resolveExcelRowAssignment({
+  rowProgramCode,
+  rowCohortName,
+  fallbackProgramId,
+  fallbackCohortId,
+}) {
+  let programId = fallbackProgramId || null;
+  let cohortId = fallbackCohortId || null;
+
+  if (rowProgramCode) {
+    const { default: Program } = await import('../../programs/models/Program.js');
+    const program = await Program.findOne({
+      code: rowProgramCode.toString().trim().toUpperCase(),
+    }).select('_id name code');
+
+    if (!program) {
+      const error = new Error(`Program code "${rowProgramCode}" was not found`);
+      error.code = 'PROGRAM_NOT_FOUND';
+      throw error;
+    }
+
+    programId = program._id.toString();
+    cohortId = null;
+  }
+
+  if (rowCohortName) {
+    if (!programId) {
+      const error = new Error('A programCode is required when cohortName is provided');
+      error.code = 'PROGRAM_REQUIRED_FOR_COHORT';
+      throw error;
+    }
+
+    const { Cohort } = await import('../../cohorts/models/Cohort.js');
+    const escapedCohortName = escapeRegex(rowCohortName.toString().trim());
+    const cohort = await Cohort.findOne({
+      programId,
+      name: { $regex: `^${escapedCohortName}$`, $options: 'i' },
+    }).select('_id name programId');
+
+    if (!cohort) {
+      const error = new Error(`Cohort "${rowCohortName}" was not found for the selected program`);
+      error.code = 'COHORT_NOT_FOUND';
+      throw error;
+    }
+
+    cohortId = cohort._id.toString();
+  }
+
+  return { programId, cohortId };
 }
 
 function existingUserAssignmentErrorResponse(res, error) {
@@ -1053,9 +1105,24 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
     // Process each user from Excel
     for (const userData of processedData.users) {
       try {
-        const { name, email, role = 'PARTICIPANT', roleInCohort: userRoleInCohort = roleInCohort } = userData;
+        const {
+          name,
+          email,
+          role = 'PARTICIPANT',
+          programCode: rowProgramCode,
+          cohortName: rowCohortName,
+          roleInCohort: userRoleInCohort = roleInCohort,
+        } = userData;
 
         assertCanAssignRole(req.user, role);
+        const rowAssignment = isPlatformAdminRole(role)
+          ? { programId: null, cohortId: null }
+          : await resolveExcelRowAssignment({
+              rowProgramCode,
+              rowCohortName,
+              fallbackProgramId: programId,
+              fallbackCohortId: cohortId,
+            });
 
         // Check if user already exists
         const existingUser = await User.findByEmail(email);
@@ -1064,8 +1131,8 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
             const assignmentResult = await assignExistingParticipantToProgram({
               existingUser,
               requestedRole: role,
-              cohortId,
-              programId,
+              cohortId: rowAssignment.cohortId,
+              programId: rowAssignment.programId,
               roleInCohort: userRoleInCohort,
             });
             results.successful.push({
@@ -1091,8 +1158,8 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
         try {
           ({ inviteContext, assignment } = await buildInviteAssignment({
             role,
-            cohortId,
-            programId,
+            cohortId: rowAssignment.cohortId,
+            programId: rowAssignment.programId,
             roleInCohort: userRoleInCohort,
           }));
         } catch (validationError) {
@@ -1138,6 +1205,8 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
           email,
           name,
           role,
+          programId: rowAssignment.programId,
+          cohortId: rowAssignment.cohortId,
           userId: user._id,
         });
 
@@ -1186,14 +1255,25 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
   }
 };
 
-// GET /users/bulk-invite-template - Download Excel template (public)
+// GET /users/bulk-invite-template - Download Excel template (admin)
 export const downloadBulkInviteTemplate = async (req, res) => {
   try {
     // Import ExcelService
     const ExcelService = (await import('../services/excelService.js')).default;
+    const { default: Program } = await import('../../programs/models/Program.js');
+    const programs = await Program.find({ status: 'ACTIVE' })
+      .sort({ name: 1 })
+      .select('code name')
+      .lean();
 
     // Generate template
-    const templateBuffer = ExcelService.generateTemplate();
+    const templateBuffer = ExcelService.generateTemplate({
+      includeSuperAdmin: req.user?.role === SUPER_ADMIN_ROLE,
+      programs: programs.map((program) => ({
+        code: program.code,
+        name: program.name,
+      })),
+    });
 
     // Set response headers
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

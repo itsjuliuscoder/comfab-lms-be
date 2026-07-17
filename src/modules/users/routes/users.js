@@ -129,9 +129,7 @@ router.patch('/preferences', requireAuth, validateBody(updatePreferencesSchema),
 router.post('/invite', requireAuth, requireAdmin, validateBody(inviteUserSchema), asyncHandler(inviteUser));
 router.post('/bulk-invite', requireAuth, requireAdmin, validateBody(bulkInviteSchema), asyncHandler(bulkInviteUsers));
 router.post('/bulk-invite-excel', requireAuth, requireAdmin, excelUpload.single('excelFile'), asyncHandler(bulkInviteUsersFromExcel));
-
-// Public routes (no authentication required)
-router.get('/bulk-invite-template', asyncHandler(downloadBulkInviteTemplate));
+router.get('/bulk-invite-template', requireAuth, requireAdmin, asyncHandler(downloadBulkInviteTemplate));
 
 // User directory routes for admin management and instructor email recipient selection
 router.get('/', requireAuth, requireInstructor, asyncHandler(getAllUsers));
