@@ -29,6 +29,7 @@ const mocked = vi.hoisted(() => {
       generateTemplate: vi.fn(),
     },
     sendInvitationEmail: vi.fn(),
+    sendProgramAssignmentEmail: vi.fn(),
   };
 });
 
@@ -38,6 +39,7 @@ vi.mock("../models/User.js", () => ({
 
 vi.mock("../../../config/email.js", () => ({
   sendInvitationEmail: mocked.sendInvitationEmail,
+  sendProgramAssignmentEmail: mocked.sendProgramAssignmentEmail,
 }));
 
 vi.mock("../../cohorts/models/Cohort.js", () => ({
@@ -103,6 +105,7 @@ describe("userController.inviteUser", () => {
     mocked.ExcelService.processExcelFile.mockReset();
     mocked.ExcelService.generateTemplate.mockReset();
     mocked.sendInvitationEmail.mockReset();
+    mocked.sendProgramAssignmentEmail.mockReset();
     mocked.Cohort.findById.mockResolvedValue(null);
     mocked.Cohort.findOne.mockReset();
     mocked.Program.findById.mockResolvedValue(null);
@@ -121,6 +124,7 @@ describe("userController.inviteUser", () => {
     mocked.ExcelService.validateFile.mockReturnValue(undefined);
     mocked.ExcelService.generateTemplate.mockReturnValue(Buffer.from("template"));
     mocked.createNotification.mockResolvedValue({});
+    mocked.sendProgramAssignmentEmail.mockResolvedValue({});
   });
 
   it("returns 400 for an invalid cohort ID", async () => {
@@ -391,6 +395,16 @@ describe("userController.inviteUser", () => {
     );
     expect(mocked.User).not.toHaveBeenCalled();
     expect(mocked.sendInvitationEmail).not.toHaveBeenCalled();
+    expect(mocked.sendProgramAssignmentEmail).toHaveBeenCalledWith(
+      existingUser,
+      expect.objectContaining({
+        programId,
+        programName: "Program A",
+        cohortName: "Cohort A",
+        programRole: "PARTICIPANT",
+      }),
+      expect.any(Object)
+    );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -452,12 +466,68 @@ describe("userController.inviteUser", () => {
 
     expect(mocked.UserCohort).not.toHaveBeenCalled();
     expect(existingMembership.save).not.toHaveBeenCalled();
+    expect(mocked.sendProgramAssignmentEmail).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           assigned: true,
           alreadyAssigned: true,
+        }),
+      })
+    );
+  });
+
+  it("does not fail assignment when program assignment email fails", async () => {
+    const programId = "507f1f77bcf86cd799439012";
+    const cohortId = "507f1f77bcf86cd799439013";
+    const existingUser = {
+      _id: "participant-1",
+      name: "Existing Participant",
+      email: "existing@example.com",
+      role: "PARTICIPANT",
+      toPublicJSON: vi.fn(() => ({ id: "participant-1" })),
+    };
+    mocked.User.findByEmail.mockResolvedValue(existingUser);
+    mocked.Cohort.findById.mockResolvedValue({
+      _id: { toString: () => cohortId },
+      name: "Cohort A",
+      programId: { toString: () => programId },
+      isFull: vi.fn(() => false),
+    });
+    mocked.Program.findById.mockResolvedValue({
+      _id: { toString: () => programId },
+      name: "Program A",
+    });
+    mocked.enrollUserInProgram.mockResolvedValue({
+      isNew: true,
+      enrollment: { _id: "user-program-1" },
+      program: { _id: programId, name: "Program A" },
+    });
+    mocked.sendProgramAssignmentEmail.mockRejectedValue(new Error("email failed"));
+
+    const req = {
+      body: {
+        name: "Existing Participant",
+        email: "existing@example.com",
+        role: "PARTICIPANT",
+        programId,
+        cohortId,
+      },
+      user: { _id: "admin-user-1" },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(mocked.sendProgramAssignmentEmail).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ok: true,
+        data: expect.objectContaining({
+          assigned: true,
+          alreadyAssigned: false,
         }),
       })
     );
@@ -521,6 +591,15 @@ describe("userController.inviteUser", () => {
           programRole: "INSTRUCTOR",
         }),
       })
+    );
+    expect(mocked.sendProgramAssignmentEmail).toHaveBeenCalledWith(
+      existingUser,
+      expect.objectContaining({
+        programId,
+        programName: "Program A",
+        programRole: "INSTRUCTOR",
+      }),
+      expect.any(Object)
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
@@ -612,6 +691,7 @@ describe("userController.inviteUser", () => {
     expect(mocked.enrollUserInProgram).not.toHaveBeenCalled();
     expect(mocked.UserCohort).not.toHaveBeenCalled();
     expect(mocked.createNotification).not.toHaveBeenCalled();
+    expect(mocked.sendProgramAssignmentEmail).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -733,6 +813,16 @@ describe("userController.inviteUser", () => {
 
     await bulkInviteUsers(req, res);
 
+    expect(mocked.sendProgramAssignmentEmail).toHaveBeenCalledWith(
+      existingUser,
+      expect.objectContaining({
+        programId,
+        programName: "Program A",
+        cohortName: "Cohort A",
+        programRole: "PARTICIPANT",
+      }),
+      expect.any(Object)
+    );
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         ok: true,
@@ -810,6 +900,7 @@ describe("userController.inviteUser", () => {
 
     await bulkInviteUsersFromExcel(req, res);
 
+    expect(mocked.sendProgramAssignmentEmail).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         ok: true,

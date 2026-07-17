@@ -139,6 +139,8 @@ async function assignExistingParticipantToProgram({
   cohortId,
   programId,
   roleInCohort,
+  assignedBy,
+  sendEmail = true,
 }) {
   if (requestedRole !== PARTICIPANT_ROLE || existingUser.role !== PARTICIPANT_ROLE) {
     const error = new Error(
@@ -149,7 +151,7 @@ async function assignExistingParticipantToProgram({
     throw error;
   }
 
-  const { assignment } = await buildInviteAssignment({
+  const { inviteContext, assignment } = await buildInviteAssignment({
     role: requestedRole,
     cohortId,
     programId,
@@ -182,7 +184,11 @@ async function assignExistingParticipantToProgram({
     await notifyUserOfProgramAssignment({
       user: existingUser,
       programAssignment,
+      cohortAssignment,
       programRole: PARTICIPANT_ROLE,
+      inviteContext,
+      assignedBy,
+      sendEmail,
     });
   }
 
@@ -197,8 +203,11 @@ async function assignExistingParticipantToProgram({
 async function notifyUserOfProgramAssignment({
   user,
   programAssignment,
+  cohortAssignment,
   programRole,
+  inviteContext,
   assignedBy,
+  sendEmail = true,
 }) {
   if (!user?._id || !programAssignment?.program?._id) {
     return;
@@ -223,6 +232,26 @@ async function notifyUserOfProgramAssignment({
   } catch (notificationError) {
     logger.error('Failed to notify user of program assignment:', notificationError);
   }
+
+  if (!sendEmail) {
+    return;
+  }
+
+  try {
+    const { sendProgramAssignmentEmail } = await import('../../../config/email.js');
+    await sendProgramAssignmentEmail(
+      user,
+      {
+        programId: programAssignment.program._id.toString(),
+        programName: inviteContext?.programName || programAssignment.program.name,
+        cohortName: inviteContext?.cohortName || cohortAssignment?.membership?.cohortId?.name || null,
+        programRole,
+      },
+      assignedBy
+    );
+  } catch (emailError) {
+    logger.error('Failed to send program assignment email:', emailError);
+  }
 }
 
 async function assignExistingInstructorToProgram({
@@ -232,6 +261,7 @@ async function assignExistingInstructorToProgram({
   programId,
   roleInCohort,
   assignedBy,
+  sendEmail = true,
 }) {
   if (requestedRole !== INSTRUCTOR_ROLE || existingUser.role !== INSTRUCTOR_ROLE) {
     const error = new Error(
@@ -242,7 +272,7 @@ async function assignExistingInstructorToProgram({
     throw error;
   }
 
-  const { assignment } = await buildInviteAssignment({
+  const { inviteContext, assignment } = await buildInviteAssignment({
     role: requestedRole,
     cohortId,
     programId,
@@ -278,8 +308,11 @@ async function assignExistingInstructorToProgram({
     await notifyUserOfProgramAssignment({
       user: existingUser,
       programAssignment,
+      cohortAssignment,
       programRole: INSTRUCTOR_ROLE,
+      inviteContext,
       assignedBy,
+      sendEmail,
     });
   }
 
@@ -320,6 +353,7 @@ async function handleExistingUserProgramInvite({
   programId,
   roleInCohort,
   assignedBy,
+  sendEmail = true,
 }) {
   const platformAdminAcknowledgement = acknowledgeExistingPlatformAdmin(
     existingUser,
@@ -336,6 +370,8 @@ async function handleExistingUserProgramInvite({
       cohortId,
       programId,
       roleInCohort,
+      assignedBy,
+      sendEmail,
     });
     return {
       ...assignmentResult,
@@ -352,6 +388,7 @@ async function handleExistingUserProgramInvite({
       programId,
       roleInCohort,
       assignedBy,
+      sendEmail,
     });
     return {
       ...assignmentResult,
@@ -940,6 +977,9 @@ export const inviteUser = async (req, res) => {
       programId,
       roleInCohort = 'MEMBER',
     } = req.body;
+    const shouldSendAssignmentEmail = parseSendInvitationEmailFlag(
+      req.body.sendInvitationEmail ?? req.body.sendWelcomeEmail
+    );
 
     try {
       assertCanAssignRole(req.user, role);
@@ -960,6 +1000,7 @@ export const inviteUser = async (req, res) => {
           programId,
           roleInCohort,
           assignedBy: req.user,
+          sendEmail: shouldSendAssignmentEmail,
         });
 
         const userData = existingUser.toPublicJSON
@@ -1084,6 +1125,7 @@ export const bulkInviteUsers = async (req, res) => {
               programId,
               roleInCohort: userRoleInCohort,
               assignedBy: req.user,
+              sendEmail: shouldSendInvitationEmail,
             });
             results.successful.push({
               email,
@@ -1329,6 +1371,7 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
               programId: rowAssignment.programId,
               roleInCohort: userRoleInCohort,
               assignedBy: req.user,
+              sendEmail: shouldSendInvitationEmail,
             });
             results.successful.push({
               email,

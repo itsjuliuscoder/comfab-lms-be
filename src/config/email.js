@@ -129,6 +129,21 @@ export class EmailService {
     });
   }
 
+  async sendProgramAssignmentEmail(user, assignmentContext, assignedBy) {
+    const emailOptions = this.provider === 'nodemailer'
+      ? createNodemailerTemplates.programAssignmentEmail(user, assignmentContext, assignedBy)
+      : createResendTemplates?.programAssignmentEmail(user, assignmentContext, assignedBy);
+
+    if (!emailOptions) {
+      throw new Error('Email templates not available for current provider');
+    }
+
+    return await this.sendEmail({
+      to: user.email,
+      ...emailOptions,
+    });
+  }
+
   async sendVerificationEmail(user, verificationToken) {
     const emailOptions = this.provider === 'nodemailer'
       ? createNodemailerTemplates.verificationEmail(user, verificationToken)
@@ -317,6 +332,8 @@ export const sendPasswordResetEmail = (user, resetToken) => emailService.sendPas
 export const sendInvitationEmail = (user, inviteToken, invitedBy, inviteContext) =>
   emailService.sendInvitationEmail(user, inviteToken, invitedBy, inviteContext);
 export const sendEnrollmentEmail = (user, course) => emailService.sendEnrollmentEmail(user, course);
+export const sendProgramAssignmentEmail = (user, assignmentContext, assignedBy) =>
+  emailService.sendProgramAssignmentEmail(user, assignmentContext, assignedBy);
 export const sendVerificationEmail = (user, verificationToken) => emailService.sendVerificationEmail(user, verificationToken);
 export const sendPasswordChangedEmail = (user) => emailService.sendPasswordChangedEmail(user);
 export const sendCourseCompletionEmail = (user, course, options) => emailService.sendCourseCompletionEmail(user, course, options);

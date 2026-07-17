@@ -106,6 +106,28 @@ describe('createEmailTemplates', () => {
     expect(template.text).toContain('Start Learning');
   });
 
+  it('programAssignmentEmail includes program, cohort, role, and dashboard CTA', () => {
+    const template = createEmailTemplates.programAssignmentEmail(
+      { ...sampleUser, role: 'INSTRUCTOR' },
+      {
+        programId: 'program-1',
+        programName: 'Leadership Track',
+        cohortName: 'Cohort 2026',
+        programRole: 'INSTRUCTOR',
+      },
+      { name: 'Admin User' }
+    );
+    brandChecks(template);
+    expect(template.subject).toContain('Leadership Track');
+    expect(template.html).toContain('Admin User');
+    expect(template.html).toContain('Leadership Track');
+    expect(template.html).toContain('Cohort 2026');
+    expect(template.html).toContain('INSTRUCTOR');
+    expect(template.html).toContain('https://lms.theconfab.org/dashboard/programs/program-1');
+    expect(template.text).toContain('Leadership Track (Cohort 2026)');
+    expect(template.text).toContain('Open Program');
+  });
+
   it('verificationEmail includes verify link', () => {
     const template = createEmailTemplates.verificationEmail(sampleUser, 'verify-token-789');
     brandChecks(template);

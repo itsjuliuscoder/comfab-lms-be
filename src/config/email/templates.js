@@ -241,6 +241,62 @@ export const createEmailTemplates = {
     };
   },
 
+  programAssignmentEmail: (user, assignmentContext = {}, assignedBy = {}) => {
+    const {
+      programName = 'your assigned program',
+      cohortName = null,
+      programRole = user.role,
+      programId = null,
+    } = assignmentContext;
+    const programUrl = programId
+      ? `${brand.clientUrl}/dashboard/programs/${programId}`
+      : `${brand.clientUrl}/dashboard`;
+    const accessLabel = buildProgramAccessLabel(programName, cohortName);
+    const assignedByName = assignedBy?.name || brand.teamName;
+
+    const bodyHtml = [
+      renderParagraph(`Hello ${escapeHtml(user.name)},`),
+      renderParagraph(
+        `You have been assigned by <strong>${escapeHtml(assignedByName)}</strong> to <strong>${escapeHtml(accessLabel)}</strong> on ${escapeHtml(brand.platformName)}.`
+      ),
+      renderInfoCard([
+        { label: 'Program', value: escapeHtml(programName) },
+        ...(cohortName ? [{ label: 'Cohort', value: escapeHtml(cohortName) }] : []),
+        { label: 'Role', value: escapeHtml(programRole) },
+      ]),
+      renderParagraph('You can access the program from your LMS dashboard.'),
+    ].join('');
+
+    const ctaHtml = renderButton('Open Program', programUrl, 'accent');
+
+    return {
+      subject: `You've been assigned to ${programName}`,
+      html: renderEmailLayout({
+        preheader: `You now have access to ${accessLabel}.`,
+        heading: 'Program assignment',
+        bodyHtml,
+        ctaHtml,
+      }),
+      text: buildPlainTextEmail({
+        heading: `You've been assigned to ${programName}`,
+        lines: [
+          `Hello ${user.name},`,
+          '',
+          `You have been assigned by ${assignedByName} to ${accessLabel} on ${brand.platformName}.`,
+          '',
+          'Assignment details:',
+          `- Program: ${programName}`,
+          ...(cohortName ? [`- Cohort: ${cohortName}`] : []),
+          `- Role: ${programRole}`,
+          '',
+          'You can access the program from your LMS dashboard.',
+        ],
+        ctaLabel: 'Open Program',
+        ctaUrl: programUrl,
+      }),
+    };
+  },
+
   verificationEmail: (user, verificationToken) => {
     const verifyUrl = `${brand.clientUrl}/verify-email?token=${verificationToken}`;
     const bodyHtml = [
