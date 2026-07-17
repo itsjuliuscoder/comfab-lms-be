@@ -1,5 +1,4 @@
 import multer from 'multer';
-import { config } from '../../../config/env.js';
 import { logger } from '../../../utils/logger.js';
 
 // File type configurations
@@ -110,6 +109,10 @@ const fileTypeConfigs = {
   }
 };
 
+const maxMaterialUploadSize = Math.max(
+  ...Object.values(fileTypeConfigs).map(typeConfig => typeConfig.maxSize)
+);
+
 // Create file filter function
 const createFileFilter = (materialType) => {
   return (req, file, cb) => {
@@ -162,7 +165,7 @@ export const createMaterialUpload = (materialType) => {
 export const materialUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: config.upload.maxFileSizeMB * 1024 * 1024, // Use environment variable
+    fileSize: maxMaterialUploadSize,
     files: 1
   },
   fileFilter: (req, file, cb) => {
@@ -232,6 +235,16 @@ export const validateMaterialType = (req, res, next) => {
       error: {
         code: 'INVALID_TYPE',
         message: `Invalid material type: ${materialType}`
+      }
+    });
+  }
+
+  if (req.file.size > typeConfig.maxSize) {
+    return res.status(400).json({
+      ok: false,
+      error: {
+        code: 'FILE_TOO_LARGE',
+        message: `File size exceeds the maximum allowed limit for ${materialType}`
       }
     });
   }
