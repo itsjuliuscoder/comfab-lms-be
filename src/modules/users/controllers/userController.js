@@ -12,6 +12,8 @@ import {
 
 const SUPER_ADMIN_ROLE = 'SUPER_ADMIN';
 const ADMIN_ROLE = 'ADMIN';
+const INSTRUCTOR_ROLE = 'INSTRUCTOR';
+const PARTICIPANT_ROLE = 'PARTICIPANT';
 const isSuperAdmin = (user) => user?.role === SUPER_ADMIN_ROLE;
 const isPlatformAdminRole = (role) => role === SUPER_ADMIN_ROLE || role === ADMIN_ROLE;
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -138,7 +140,7 @@ async function assignExistingParticipantToProgram({
   programId,
   roleInCohort,
 }) {
-  if (requestedRole !== 'PARTICIPANT' || existingUser.role !== 'PARTICIPANT') {
+  if (requestedRole !== PARTICIPANT_ROLE || existingUser.role !== PARTICIPANT_ROLE) {
     const error = new Error(
       'This email already belongs to a user with a different role'
     );
@@ -164,6 +166,7 @@ async function assignExistingParticipantToProgram({
     {
       status: 'ACTIVE',
       skipCapacityCheck: true,
+      programRole: PARTICIPANT_ROLE,
     }
   );
 
@@ -172,14 +175,197 @@ async function assignExistingParticipantToProgram({
     assignment.cohortId,
     assignment.roleInCohort || roleInCohort
   );
+  const wasAlreadyAssigned =
+    !programAssignment.isNew && !cohortAssignment.isNew;
+
+  if (!wasAlreadyAssigned) {
+    await notifyUserOfProgramAssignment({
+      user: existingUser,
+      programAssignment,
+      programRole: PARTICIPANT_ROLE,
+    });
+  }
 
   return {
     user: existingUser,
     programAssignment,
     cohortAssignment,
-    wasAlreadyAssigned:
-      !programAssignment.isNew && !cohortAssignment.isNew,
+    wasAlreadyAssigned,
   };
+}
+
+async function notifyUserOfProgramAssignment({
+  user,
+  programAssignment,
+  programRole,
+  assignedBy,
+}) {
+  if (!user?._id || !programAssignment?.program?._id) {
+    return;
+  }
+
+  try {
+    const { createNotification } = await import('../../notifications/services/notificationService.js');
+    const programName = programAssignment.program.name || 'a program';
+    await createNotification({
+      userId: user._id,
+      type: 'SYSTEM',
+      title: 'Program assignment',
+      message: `You have been assigned to ${programName} as ${programRole.toLowerCase()}.`,
+      link: `/dashboard/programs/${programAssignment.program._id.toString()}`,
+      data: {
+        programId: programAssignment.program._id.toString(),
+        programRole,
+        assignedBy: assignedBy?._id?.toString(),
+      },
+      priority: 'MEDIUM',
+    });
+  } catch (notificationError) {
+    logger.error('Failed to notify user of program assignment:', notificationError);
+  }
+}
+
+async function assignExistingInstructorToProgram({
+  existingUser,
+  requestedRole,
+  cohortId,
+  programId,
+  roleInCohort,
+  assignedBy,
+}) {
+  if (requestedRole !== INSTRUCTOR_ROLE || existingUser.role !== INSTRUCTOR_ROLE) {
+    const error = new Error(
+      'This email already belongs to a user with a different role'
+    );
+    error.code = 'EXISTING_USER_ROLE_CONFLICT';
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const { assignment } = await buildInviteAssignment({
+    role: requestedRole,
+    cohortId,
+    programId,
+    roleInCohort,
+    skipCohortCapacityCheck: true,
+  });
+
+  const { enrollUserInProgram } = await import(
+    '../../programs/services/programEnrollmentService.js'
+  );
+  const programAssignment = await enrollUserInProgram(
+    existingUser._id,
+    assignment.programId,
+    {
+      status: 'ACTIVE',
+      skipCapacityCheck: true,
+      programRole: INSTRUCTOR_ROLE,
+    }
+  );
+
+  const cohortAssignment = await assignUserToCohort(
+    existingUser._id,
+    assignment.cohortId,
+    assignment.roleInCohort || roleInCohort
+  );
+  const wasAlreadyAssigned =
+    !programAssignment.isNew &&
+    !programAssignment.wasActivated &&
+    !programAssignment.programRoleChanged &&
+    !cohortAssignment.isNew;
+
+  if (!wasAlreadyAssigned) {
+    await notifyUserOfProgramAssignment({
+      user: existingUser,
+      programAssignment,
+      programRole: INSTRUCTOR_ROLE,
+      assignedBy,
+    });
+  }
+
+  return {
+    user: existingUser,
+    programAssignment,
+    cohortAssignment,
+    wasAlreadyAssigned,
+  };
+}
+
+function acknowledgeExistingPlatformAdmin(existingUser, requestedRole) {
+  if (!isPlatformAdminRole(existingUser.role)) {
+    return null;
+  }
+
+  if (existingUser.role !== requestedRole) {
+    const error = new Error(
+      'This email already belongs to a user with a different role'
+    );
+    error.code = 'EXISTING_USER_ROLE_CONFLICT';
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return {
+    user: existingUser,
+    assigned: false,
+    alreadyHasAccess: true,
+    wasAlreadyAssigned: true,
+  };
+}
+
+async function handleExistingUserProgramInvite({
+  existingUser,
+  requestedRole,
+  cohortId,
+  programId,
+  roleInCohort,
+  assignedBy,
+}) {
+  const platformAdminAcknowledgement = acknowledgeExistingPlatformAdmin(
+    existingUser,
+    requestedRole
+  );
+  if (platformAdminAcknowledgement) {
+    return platformAdminAcknowledgement;
+  }
+
+  if (requestedRole === PARTICIPANT_ROLE && existingUser.role === PARTICIPANT_ROLE) {
+    const assignmentResult = await assignExistingParticipantToProgram({
+      existingUser,
+      requestedRole,
+      cohortId,
+      programId,
+      roleInCohort,
+    });
+    return {
+      ...assignmentResult,
+      assigned: true,
+      programRole: PARTICIPANT_ROLE,
+    };
+  }
+
+  if (requestedRole === INSTRUCTOR_ROLE && existingUser.role === INSTRUCTOR_ROLE) {
+    const assignmentResult = await assignExistingInstructorToProgram({
+      existingUser,
+      requestedRole,
+      cohortId,
+      programId,
+      roleInCohort,
+      assignedBy,
+    });
+    return {
+      ...assignmentResult,
+      assigned: true,
+      programRole: INSTRUCTOR_ROLE,
+    };
+  }
+
+  const error = new Error(
+    'This email already belongs to a user with a different role'
+  );
+  error.code = 'EXISTING_USER_ROLE_CONFLICT';
+  error.statusCode = 400;
+  throw error;
 }
 
 async function resolveExcelRowAssignment({
@@ -767,25 +953,30 @@ export const inviteUser = async (req, res) => {
     const existingUser = await User.findByEmail(email);
     if (existingUser) {
       try {
-        const assignmentResult = await assignExistingParticipantToProgram({
+        const assignmentResult = await handleExistingUserProgramInvite({
           existingUser,
           requestedRole: role,
           cohortId,
           programId,
           roleInCohort,
+          assignedBy: req.user,
         });
 
         const userData = existingUser.toPublicJSON
           ? existingUser.toPublicJSON()
           : existingUser;
-        const message = assignmentResult.wasAlreadyAssigned
-          ? 'Participant is already assigned to this program and cohort.'
-          : 'Existing participant assigned to program successfully.';
+        const message = assignmentResult.alreadyHasAccess
+          ? 'User already has platform access.'
+          : assignmentResult.wasAlreadyAssigned
+            ? 'User is already assigned to this program.'
+            : 'Existing user assigned to program successfully.';
 
         return successResponse(res, {
           user: userData,
-          assigned: true,
+          assigned: assignmentResult.assigned,
           alreadyAssigned: assignmentResult.wasAlreadyAssigned,
+          alreadyHasAccess: assignmentResult.alreadyHasAccess || false,
+          ...(assignmentResult.programRole ? { programRole: assignmentResult.programRole } : {}),
           message,
         }, message, 200);
       } catch (assignmentError) {
@@ -886,20 +1077,23 @@ export const bulkInviteUsers = async (req, res) => {
         const existingUser = await User.findByEmail(email);
         if (existingUser) {
           try {
-            const assignmentResult = await assignExistingParticipantToProgram({
+            const assignmentResult = await handleExistingUserProgramInvite({
               existingUser,
               requestedRole: role,
               cohortId,
               programId,
               roleInCohort: userRoleInCohort,
+              assignedBy: req.user,
             });
             results.successful.push({
               email,
               name: existingUser.name || name,
               role: existingUser.role,
               userId: existingUser._id,
-              assignedExistingUser: true,
+              assignedExistingUser: assignmentResult.assigned,
               alreadyAssigned: assignmentResult.wasAlreadyAssigned,
+              alreadyHasAccess: assignmentResult.alreadyHasAccess || false,
+              ...(assignmentResult.programRole ? { programRole: assignmentResult.programRole } : {}),
             });
           } catch (assignmentError) {
             results.failed.push({
@@ -1128,20 +1322,23 @@ export const bulkInviteUsersFromExcel = async (req, res) => {
         const existingUser = await User.findByEmail(email);
         if (existingUser) {
           try {
-            const assignmentResult = await assignExistingParticipantToProgram({
+            const assignmentResult = await handleExistingUserProgramInvite({
               existingUser,
               requestedRole: role,
               cohortId: rowAssignment.cohortId,
               programId: rowAssignment.programId,
               roleInCohort: userRoleInCohort,
+              assignedBy: req.user,
             });
             results.successful.push({
               email,
               name: existingUser.name || name,
               role: existingUser.role,
               userId: existingUser._id,
-              assignedExistingUser: true,
+              assignedExistingUser: assignmentResult.assigned,
               alreadyAssigned: assignmentResult.wasAlreadyAssigned,
+              alreadyHasAccess: assignmentResult.alreadyHasAccess || false,
+              ...(assignmentResult.programRole ? { programRole: assignmentResult.programRole } : {}),
             });
           } catch (assignmentError) {
             results.failed.push({

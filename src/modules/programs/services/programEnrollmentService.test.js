@@ -50,10 +50,38 @@ describe("enrollUserInProgram", () => {
         userId: "user-1",
         programId: "program-1",
         status: "ACTIVE",
+        programRole: "PARTICIPANT",
       })
     );
     expect(mockEnrollmentSave).toHaveBeenCalled();
     expect(program.addParticipant).toHaveBeenCalled();
+    expect(result.isNew).toBe(true);
+  });
+
+  it("creates instructor assignment without counting participant capacity", async () => {
+    const program = {
+      addParticipant: vi.fn().mockReturnValue(true),
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+
+    mockFindById.mockResolvedValue(program);
+    mockFindByUserAndProgram.mockResolvedValue(null);
+
+    const result = await enrollUserInProgram("instructor-1", "program-1", {
+      status: "ACTIVE",
+      programRole: "INSTRUCTOR",
+    });
+
+    expect(UserProgram).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "instructor-1",
+        programId: "program-1",
+        status: "ACTIVE",
+        programRole: "INSTRUCTOR",
+      })
+    );
+    expect(program.addParticipant).not.toHaveBeenCalled();
+    expect(program.save).not.toHaveBeenCalled();
     expect(result.isNew).toBe(true);
   });
 
@@ -73,6 +101,30 @@ describe("enrollUserInProgram", () => {
     expect(result.enrollment).toBe(existing);
     expect(program.addParticipant).not.toHaveBeenCalled();
     expect(UserProgram).not.toHaveBeenCalled();
+  });
+
+  it("restores and updates an existing instructor assignment", async () => {
+    const program = { addParticipant: vi.fn(), save: vi.fn() };
+    mockFindById.mockResolvedValue(program);
+
+    const existing = {
+      status: "WITHDRAWN",
+      programRole: "PARTICIPANT",
+      save: vi.fn(),
+    };
+    mockFindByUserAndProgram.mockResolvedValue(existing);
+
+    const result = await enrollUserInProgram("instructor-1", "program-1", {
+      status: "ACTIVE",
+      programRole: "INSTRUCTOR",
+    });
+
+    expect(existing.status).toBe("ACTIVE");
+    expect(existing.programRole).toBe("INSTRUCTOR");
+    expect(existing.save).toHaveBeenCalled();
+    expect(program.addParticipant).not.toHaveBeenCalled();
+    expect(result.wasActivated).toBe(true);
+    expect(result.programRoleChanged).toBe(true);
   });
 
   it("throws when program is not found", async () => {

@@ -21,6 +21,11 @@ const userProgramSchema = new mongoose.Schema(
       enum: ["PENDING", "ACTIVE", "COMPLETED", "WITHDRAWN", "SUSPENDED"],
       default: "ACTIVE",
     },
+    programRole: {
+      type: String,
+      enum: ["PARTICIPANT", "INSTRUCTOR"],
+      default: "PARTICIPANT",
+    },
     completedAt: {
       type: Date,
     },
@@ -68,6 +73,7 @@ userProgramSchema.index({ userId: 1, programId: 1 }, { unique: true });
 userProgramSchema.index({ userId: 1 });
 userProgramSchema.index({ programId: 1 });
 userProgramSchema.index({ status: 1 });
+userProgramSchema.index({ programRole: 1 });
 userProgramSchema.index({ enrolledAt: 1 });
 
 // Virtual for program details

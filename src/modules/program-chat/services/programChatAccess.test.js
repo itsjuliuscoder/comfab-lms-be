@@ -73,6 +73,32 @@ describe("program chat access", () => {
     expect(otherResult.allowed).toBe(false);
   });
 
+  it("allows instructors with active program instructor assignment", async () => {
+    Program.findById.mockReturnValue({
+      select: vi.fn().mockResolvedValue({
+        _id: "program-1",
+        ownerId: "owner-1",
+        coordinatorId: "coord-1",
+        name: "Program A",
+      }),
+    });
+    UserProgram.findByUserAndProgram.mockResolvedValue({
+      status: "ACTIVE",
+      programRole: "INSTRUCTOR",
+    });
+
+    const result = await canAccessProgramChat(
+      { _id: "assigned-instructor", role: "INSTRUCTOR" },
+      "program-1"
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(UserProgram.findByUserAndProgram).toHaveBeenCalledWith(
+      "assigned-instructor",
+      "program-1"
+    );
+  });
+
   it("requires active enrollment for participants", async () => {
     Program.findById.mockReturnValue({
       select: vi.fn().mockResolvedValue({

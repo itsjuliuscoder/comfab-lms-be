@@ -12,7 +12,7 @@ function isProgramManager(user, program) {
 /**
  * Determines whether a user may access a program chat channel.
  * - ADMIN: all programs
- * - INSTRUCTOR: program owner or coordinator
+ * - INSTRUCTOR: program owner, coordinator, or active instructor assignment
  * - PARTICIPANT: active UserProgram enrollment only
  */
 export async function canAccessProgramChat(user, programId) {
@@ -34,6 +34,13 @@ export async function canAccessProgramChat(user, programId) {
   if (user.role === "INSTRUCTOR") {
     if (isProgramManager(user, program)) {
       return { allowed: true, program };
+    }
+    const assignment = await UserProgram.findByUserAndProgram(
+      user._id,
+      programId
+    );
+    if (assignment?.status === "ACTIVE" && assignment.programRole === "INSTRUCTOR") {
+      return { allowed: true, program, assignment };
     }
     return { allowed: false, reason: "You do not manage this program" };
   }

@@ -22,6 +22,7 @@ const mocked = vi.hoisted(() => {
     },
     UserCohort,
     enrollUserInProgram: vi.fn(),
+    createNotification: vi.fn(),
     ExcelService: {
       validateFile: vi.fn(),
       processExcelFile: vi.fn(),
@@ -54,6 +55,10 @@ vi.mock("../../programs/models/Program.js", () => ({
 
 vi.mock("../../programs/services/programEnrollmentService.js", () => ({
   enrollUserInProgram: mocked.enrollUserInProgram,
+}));
+
+vi.mock("../../notifications/services/notificationService.js", () => ({
+  createNotification: mocked.createNotification,
 }));
 
 vi.mock("../services/excelService.js", () => ({
@@ -93,6 +98,7 @@ describe("userController.inviteUser", () => {
     mocked.UserCohort.mockReset();
     mocked.UserCohort.findOne.mockReset();
     mocked.enrollUserInProgram.mockReset();
+    mocked.createNotification.mockReset();
     mocked.ExcelService.validateFile.mockReset();
     mocked.ExcelService.processExcelFile.mockReset();
     mocked.ExcelService.generateTemplate.mockReset();
@@ -114,6 +120,7 @@ describe("userController.inviteUser", () => {
     });
     mocked.ExcelService.validateFile.mockReturnValue(undefined);
     mocked.ExcelService.generateTemplate.mockReturnValue(Buffer.from("template"));
+    mocked.createNotification.mockResolvedValue({});
   });
 
   it("returns 400 for an invalid cohort ID", async () => {
@@ -451,6 +458,199 @@ describe("userController.inviteUser", () => {
         data: expect.objectContaining({
           assigned: true,
           alreadyAssigned: true,
+        }),
+      })
+    );
+  });
+
+  it("assigns an existing instructor to a program without changing their role", async () => {
+    const programId = "507f1f77bcf86cd799439012";
+    const existingUser = {
+      _id: "instructor-1",
+      name: "Existing Instructor",
+      email: "teacher@example.com",
+      role: "INSTRUCTOR",
+      toPublicJSON: vi.fn(() => ({
+        id: "instructor-1",
+        name: "Existing Instructor",
+        email: "teacher@example.com",
+        role: "INSTRUCTOR",
+      })),
+    };
+    mocked.User.findByEmail.mockResolvedValue(existingUser);
+    mocked.Program.findById.mockResolvedValue({
+      _id: { toString: () => programId },
+      name: "Program A",
+    });
+    mocked.enrollUserInProgram.mockResolvedValue({
+      isNew: true,
+      enrollment: { _id: "user-program-1" },
+      program: { _id: { toString: () => programId }, name: "Program A" },
+    });
+
+    const req = {
+      body: {
+        name: "Existing Instructor",
+        email: "teacher@example.com",
+        role: "INSTRUCTOR",
+        programId,
+      },
+      user: { _id: "admin-user-1" },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(mocked.enrollUserInProgram).toHaveBeenCalledWith(
+      "instructor-1",
+      programId,
+      expect.objectContaining({
+        status: "ACTIVE",
+        skipCapacityCheck: true,
+        programRole: "INSTRUCTOR",
+      })
+    );
+    expect(mocked.User).not.toHaveBeenCalled();
+    expect(mocked.createNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "instructor-1",
+        type: "SYSTEM",
+        title: "Program assignment",
+        data: expect.objectContaining({
+          programId,
+          programRole: "INSTRUCTOR",
+        }),
+      })
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          assigned: true,
+          alreadyAssigned: false,
+          programRole: "INSTRUCTOR",
+        }),
+      })
+    );
+  });
+
+  it("assigns an existing instructor to a cohort when provided", async () => {
+    const programId = "507f1f77bcf86cd799439012";
+    const cohortId = "507f1f77bcf86cd799439013";
+    const existingUser = {
+      _id: "instructor-1",
+      name: "Existing Instructor",
+      email: "teacher@example.com",
+      role: "INSTRUCTOR",
+      toPublicJSON: vi.fn(() => ({ id: "instructor-1" })),
+    };
+    mocked.User.findByEmail.mockResolvedValue(existingUser);
+    mocked.Cohort.findById.mockResolvedValue({
+      _id: { toString: () => cohortId },
+      name: "Cohort A",
+      programId: { toString: () => programId },
+      isFull: vi.fn(() => false),
+    });
+    mocked.Program.findById.mockResolvedValue({
+      _id: { toString: () => programId },
+      name: "Program A",
+    });
+    mocked.enrollUserInProgram.mockResolvedValue({
+      isNew: true,
+      enrollment: { _id: "user-program-1" },
+      program: { _id: { toString: () => programId }, name: "Program A" },
+    });
+
+    const req = {
+      body: {
+        name: "Existing Instructor",
+        email: "teacher@example.com",
+        role: "INSTRUCTOR",
+        programId,
+        cohortId,
+        roleInCohort: "MENTOR",
+      },
+      user: { _id: "admin-user-1" },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(mocked.UserCohort).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "instructor-1",
+        cohortId,
+        roleInCohort: "MENTOR",
+      })
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("acknowledges existing admins without creating a program assignment", async () => {
+    const existingUser = {
+      _id: "admin-2",
+      name: "Existing Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+      toPublicJSON: vi.fn(() => ({ id: "admin-2", role: "ADMIN" })),
+    };
+    mocked.User.findByEmail.mockResolvedValue(existingUser);
+
+    const req = {
+      body: {
+        name: "Existing Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+        programId: "507f1f77bcf86cd799439012",
+      },
+      user: { _id: "admin-user-1" },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(mocked.enrollUserInProgram).not.toHaveBeenCalled();
+    expect(mocked.UserCohort).not.toHaveBeenCalled();
+    expect(mocked.createNotification).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          assigned: false,
+          alreadyHasAccess: true,
+        }),
+      })
+    );
+  });
+
+  it("rejects cross-role existing user program invites", async () => {
+    mocked.User.findByEmail.mockResolvedValue({
+      _id: "instructor-1",
+      name: "Existing Instructor",
+      email: "teacher@example.com",
+      role: "INSTRUCTOR",
+    });
+
+    const req = {
+      body: {
+        name: "Existing Instructor",
+        email: "teacher@example.com",
+        role: "PARTICIPANT",
+        programId: "507f1f77bcf86cd799439012",
+        cohortId: "507f1f77bcf86cd799439013",
+      },
+      user: { _id: "admin-user-1" },
+    };
+    const res = createRes();
+
+    await inviteUser(req, res);
+
+    expect(mocked.enrollUserInProgram).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: "EXISTING_USER_ROLE_CONFLICT",
         }),
       })
     );

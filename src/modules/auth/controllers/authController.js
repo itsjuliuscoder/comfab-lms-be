@@ -514,6 +514,7 @@ export const completeInvite = async (req, res) => {
       await enrollUserInProgram(user._id, assignedProgramId, {
         status: 'ACTIVE',
         skipCapacityCheck: true,
+        programRole: user.role === 'INSTRUCTOR' ? 'INSTRUCTOR' : 'PARTICIPANT',
       });
     }
 

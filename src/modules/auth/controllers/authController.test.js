@@ -16,6 +16,7 @@ const mocked = vi.hoisted(() => {
     })),
     verifyRefreshToken: vi.fn(),
     createNotification: vi.fn(),
+    enrollUserInProgram: vi.fn(),
   };
 });
 
@@ -42,6 +43,10 @@ vi.mock("../../notifications/services/notificationService.js", () => ({
   notifyAdmins: vi.fn(),
 }));
 
+vi.mock("../../programs/services/programEnrollmentService.js", () => ({
+  enrollUserInProgram: mocked.enrollUserInProgram,
+}));
+
 const { completeInvite, register } = await import("./authController.js");
 
 const createRes = () => {
@@ -60,6 +65,7 @@ describe("authController.register", () => {
     mocked.sendWelcomeEmail.mockReset();
     mocked.generateTokens.mockClear();
     mocked.createNotification.mockReset();
+    mocked.enrollUserInProgram.mockReset();
   });
 
   it("forces public registration to create participants", async () => {
@@ -249,6 +255,46 @@ describe("authController.completeInvite", () => {
     await completeInvite(req, res);
 
     expect(mocked.createNotification).toHaveBeenCalledOnce();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
+  });
+
+  it("creates instructor program assignment when an invited instructor completes signup", async () => {
+    const invitedUser = createInvitedUser({
+      role: "INSTRUCTOR",
+      cohortAssignment: {
+        programId: "program-1",
+        cohortId: null,
+        roleInCohort: "MEMBER",
+      },
+      toPublicJSON: vi.fn(() => ({
+        id: "invited-user-1",
+        name: "Invited User",
+        email: "invited@example.com",
+        role: "INSTRUCTOR",
+      })),
+    });
+    mocked.User.findOne.mockResolvedValue(invitedUser);
+    mocked.User.findById.mockReturnValue(
+      createInviterQuery({
+        _id: { toString: () => "admin-1" },
+        role: "ADMIN",
+      })
+    );
+
+    const req = { body: { token: "token-123", password: "password123" } };
+    const res = createRes();
+
+    await completeInvite(req, res);
+
+    expect(mocked.enrollUserInProgram).toHaveBeenCalledWith(
+      invitedUser._id,
+      "program-1",
+      expect.objectContaining({
+        status: "ACTIVE",
+        skipCapacityCheck: true,
+        programRole: "INSTRUCTOR",
+      })
+    );
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ok: true }));
   });
 });

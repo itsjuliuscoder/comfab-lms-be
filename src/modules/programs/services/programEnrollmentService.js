@@ -7,7 +7,12 @@ import { logger } from "../../../utils/logger.js";
  * Reuses participant count logic from self-enroll when status is ACTIVE.
  */
 export async function enrollUserInProgram(userId, programId, options = {}) {
-  const { status = "ACTIVE", skipCapacityCheck = false } = options;
+  const {
+    status = "ACTIVE",
+    skipCapacityCheck = false,
+    programRole = "PARTICIPANT",
+  } = options;
+  const shouldCountAsParticipant = programRole === "PARTICIPANT";
 
   const program = await Program.findById(programId);
   if (!program) {
@@ -20,14 +25,51 @@ export async function enrollUserInProgram(userId, programId, options = {}) {
   let enrollment = await UserProgram.findByUserAndProgram(userId, programId);
 
   if (enrollment) {
+    const previousStatus = enrollment.status;
+    const previousProgramRole = enrollment.programRole || "PARTICIPANT";
+    const previouslyCounted =
+      previousStatus === "ACTIVE" && previousProgramRole === "PARTICIPANT";
+    const shouldBeCounted =
+      status === "ACTIVE" && programRole === "PARTICIPANT";
+    let changed = false;
+
     if (enrollment.status !== status) {
       enrollment.status = status;
+      changed = true;
+    }
+    if (previousProgramRole !== programRole) {
+      enrollment.programRole = programRole;
+      changed = true;
+    }
+    if (changed) {
       await enrollment.save();
     }
-    return { enrollment, program, isNew: false };
+    if (!previouslyCounted && shouldBeCounted) {
+      const added = program.addParticipant();
+      if (!added && !skipCapacityCheck) {
+        const err = new Error("Program has reached maximum capacity");
+        err.code = "PROGRAM_FULL";
+        err.statusCode = 400;
+        throw err;
+      }
+      if (added) {
+        await program.save();
+      }
+    } else if (previouslyCounted && !shouldBeCounted) {
+      program.removeParticipant();
+      await program.save();
+    }
+
+    return {
+      enrollment,
+      program,
+      isNew: false,
+      wasActivated: previousStatus !== "ACTIVE" && status === "ACTIVE",
+      programRoleChanged: previousProgramRole !== programRole,
+    };
   }
 
-  if (status === "ACTIVE" && !skipCapacityCheck) {
+  if (status === "ACTIVE" && shouldCountAsParticipant && !skipCapacityCheck) {
     const added = program.addParticipant();
     if (!added) {
       const err = new Error("Program has reached maximum capacity");
@@ -36,7 +78,7 @@ export async function enrollUserInProgram(userId, programId, options = {}) {
       throw err;
     }
     await program.save();
-  } else if (status === "ACTIVE") {
+  } else if (status === "ACTIVE" && shouldCountAsParticipant) {
     const added = program.addParticipant();
     if (added) {
       await program.save();
@@ -48,6 +90,7 @@ export async function enrollUserInProgram(userId, programId, options = {}) {
     programId,
     enrolledAt: new Date(),
     status,
+    programRole,
   });
   await enrollment.save();
 
@@ -55,6 +98,7 @@ export async function enrollUserInProgram(userId, programId, options = {}) {
     programId: programId.toString(),
     userId: userId.toString(),
     status,
+    programRole,
   });
 
   return { enrollment, program, isNew: true };
