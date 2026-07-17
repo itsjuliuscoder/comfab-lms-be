@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../../../middleware/auth.js';
-import { requireRole } from '../../../middleware/rbac.js';
+import { requireAdmin, requireInstructor } from '../../../middleware/rbac.js';
 import { validateBody, validateQuery, validateParams } from '../../../middleware/validation.js';
 import { asyncHandler } from '../../../middleware/error.js';
 import {
@@ -75,7 +75,7 @@ router.get(
 router.get(
   '/stats',
   requireAuth,
-  requireRole(['ADMIN', 'INSTRUCTOR']),
+  requireInstructor,
   asyncHandler(getMaterialStats)
 );
 
@@ -115,7 +115,7 @@ router.get(
 router.post(
   '/',
   requireAuth,
-  requireRole(['ADMIN', 'INSTRUCTOR']),
+  requireInstructor,
   materialUpload.single('file'),
   validateMaterialType,
   validateBody(createMaterialSchema),
@@ -127,7 +127,7 @@ router.post(
 router.put(
   '/:id',
   requireAuth,
-  requireRole(['ADMIN', 'INSTRUCTOR']),
+  requireInstructor,
   materialUpload.single('file'),
   validateMaterialType,
   validateParams(materialIdSchema),
@@ -140,7 +140,7 @@ router.put(
 router.delete(
   '/:id',
   requireAuth,
-  requireRole(['ADMIN', 'INSTRUCTOR']),
+  requireInstructor,
   validateParams(materialIdSchema),
   asyncHandler(deleteCourseMaterial)
 );
@@ -158,7 +158,7 @@ router.post(
 router.post(
   '/bulk-upload',
   requireAuth,
-  requireRole(['ADMIN', 'INSTRUCTOR']),
+  requireInstructor,
   materialUpload.array('files', 10), // Allow up to 10 files
   asyncHandler(async (req, res) => {
     // This would be implemented for bulk uploads
@@ -176,7 +176,7 @@ router.post(
 router.put(
   '/bulk-update',
   requireAuth,
-  requireRole(['ADMIN', 'INSTRUCTOR']),
+  requireInstructor,
   validateBody(z.object({
     materialIds: z.array(z.string()).min(1, 'At least one material ID is required'),
     updates: z.object({
@@ -202,7 +202,7 @@ router.put(
 router.delete(
   '/bulk-delete',
   requireAuth,
-  requireRole(['ADMIN']),
+  requireAdmin,
   validateBody(z.object({
     materialIds: z.array(z.string()).min(1, 'At least one material ID is required')
   })),

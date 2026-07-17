@@ -63,6 +63,74 @@ const buildCohortSummary = (cohortDoc) => {
   };
 };
 
+const emptyCourseStats = () => ({
+  enrollmentCount: 0,
+  activeEnrollmentCount: 0,
+  completedEnrollmentCount: 0,
+  completionRate: 0,
+  averageProgress: 0,
+});
+
+const getCourseId = (course) => course?._id?.toString?.() || course?.id?.toString?.() || course?.toString?.();
+
+const getCourseStatsMap = async (courseIds = []) => {
+  const normalizedIds = Array.from(
+    new Set(
+      courseIds
+        .map((courseId) => courseId?.toString?.() || courseId)
+        .filter((courseId) => mongoose.isValidObjectId(courseId))
+    )
+  );
+
+  if (normalizedIds.length === 0) {
+    return new Map();
+  }
+
+  const stats = await Enrollment.aggregate([
+    {
+      $match: {
+        courseId: {
+          $in: normalizedIds.map((courseId) => new mongoose.Types.ObjectId(courseId)),
+        },
+        status: { $in: ["ACTIVE", "COMPLETED"] },
+      },
+    },
+    {
+      $group: {
+        _id: "$courseId",
+        enrollmentCount: { $sum: 1 },
+        activeEnrollmentCount: {
+          $sum: { $cond: [{ $eq: ["$status", "ACTIVE"] }, 1, 0] },
+        },
+        completedEnrollmentCount: {
+          $sum: { $cond: [{ $eq: ["$status", "COMPLETED"] }, 1, 0] },
+        },
+        averageProgress: { $avg: "$progressPct" },
+      },
+    },
+  ]);
+
+  return new Map(
+    stats.map((item) => {
+      const enrollmentCount = item.enrollmentCount || 0;
+      const completedEnrollmentCount = item.completedEnrollmentCount || 0;
+      return [
+        item._id.toString(),
+        {
+          enrollmentCount,
+          activeEnrollmentCount: item.activeEnrollmentCount || 0,
+          completedEnrollmentCount,
+          completionRate:
+            enrollmentCount > 0
+              ? Math.round((completedEnrollmentCount / enrollmentCount) * 100)
+              : 0,
+          averageProgress: Math.round(item.averageProgress || 0),
+        },
+      ];
+    })
+  );
+};
+
 const toFrontendNote = (noteDoc) => {
   if (!noteDoc) return null;
   const note =
@@ -352,6 +420,11 @@ export const toFrontendCourse = (courseDoc, options = {}) => {
     : { ...courseDoc };
 
   const includeCohorts = Boolean(options.includeCohorts);
+  const courseId = course.id || course._id?.toString();
+  const stats =
+    options.stats ||
+    options.statsByCourseId?.get(courseId) ||
+    emptyCourseStats();
   const cohortSummaries = Array.isArray(course.cohortIds)
     ? course.cohortIds
         .map((cohort) => buildCohortSummary(cohort))
@@ -361,11 +434,15 @@ export const toFrontendCourse = (courseDoc, options = {}) => {
 
   return {
     ...restCourse,
-    id: course.id || course._id?.toString(),
+    id: courseId,
     description: course.description || course.summary || "",
     level: course.level || COURSE_LEVEL_MAP[course.difficulty] || undefined,
     duration: course.duration ?? course.estimatedDuration ?? 0,
-    enrollmentCount: course.enrollmentCount ?? 0,
+    enrollmentCount: stats.enrollmentCount,
+    activeEnrollmentCount: stats.activeEnrollmentCount,
+    completedEnrollmentCount: stats.completedEnrollmentCount,
+    completionRate: stats.completionRate,
+    averageProgress: stats.averageProgress,
     ...(includeCohorts
       ? {
           cohortIds: normalizeCohortIds(cohortIds),
@@ -435,10 +512,11 @@ export const getAllCourses = async (req, res) => {
     }
 
     const courses = await courseQuery;
+    const courseStatsById = await getCourseStatsMap(courses.map(getCourseId));
 
     // If user is authenticated and enrollment status is requested, check enrollment for each course
     let coursesWithEnrollment = courses.map((course) =>
-      toFrontendCourse(course, { includeCohorts })
+      toFrontendCourse(course, { includeCohorts, statsByCourseId: courseStatsById })
     );
     if (req.user && includeEnrollmentStatus === "true") {
       const courseIds = courses.map((course) => course._id);
@@ -460,7 +538,7 @@ export const getAllCourses = async (req, res) => {
       coursesWithEnrollment = courses.map((course) => {
         const enrollment = enrollmentMap[course._id.toString()];
         return {
-          ...toFrontendCourse(course, { includeCohorts }),
+          ...toFrontendCourse(course, { includeCohorts, statsByCourseId: courseStatsById }),
           enrollmentStatus: enrollment
             ? {
                 isEnrolled: true,
@@ -525,6 +603,7 @@ export const getCourseCatalog = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
+    const courseStatsById = await getCourseStatsMap(courses.map(getCourseId));
 
     // Always check enrollment status for authenticated users
     let coursesWithEnrollment = courses;
@@ -548,7 +627,7 @@ export const getCourseCatalog = async (req, res) => {
       coursesWithEnrollment = courses.map((course) => {
         const enrollment = enrollmentMap[course._id.toString()];
         return {
-          ...toFrontendCourse(course),
+          ...toFrontendCourse(course, { statsByCourseId: courseStatsById }),
           enrollmentStatus: enrollment
             ? {
                 isEnrolled: true,
@@ -571,7 +650,7 @@ export const getCourseCatalog = async (req, res) => {
     } else {
       // For unauthenticated users, add default enrollment status
       coursesWithEnrollment = courses.map((course) => ({
-        ...toFrontendCourse(course),
+        ...toFrontendCourse(course, { statsByCourseId: courseStatsById }),
         enrollmentStatus: {
           isEnrolled: false,
           enrollmentId: null,
@@ -689,10 +768,16 @@ export const getCourseById = async (req, res) => {
     if (canSeeCohorts) {
       await course.populate("cohortIds", "name status programId");
     }
+    const courseStatsById = await getCourseStatsMap([course._id]);
 
     return successResponse(
       res,
-      { course: toFrontendCourse(course, { includeCohorts: canSeeCohorts }) },
+      {
+        course: toFrontendCourse(course, {
+          includeCohorts: canSeeCohorts,
+          statsByCourseId: courseStatsById,
+        }),
+      },
       "Course retrieved successfully"
     );
   } catch (error) {

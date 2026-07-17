@@ -90,6 +90,7 @@ const mocked = vi.hoisted(() => {
     },
     Enrollment: {
       find: vi.fn(),
+      aggregate: vi.fn(),
     },
     Program: {
       findById: vi.fn(),
@@ -225,6 +226,7 @@ describe("courseController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocked.Program.findById.mockResolvedValue({ _id: "program-1" });
+    mocked.Enrollment.aggregate.mockResolvedValue([]);
   });
 
   it("supports programId filtering and returns a courses alias", async () => {
@@ -268,6 +270,79 @@ describe("courseController", () => {
             expect.objectContaining({
               id: "course-1",
               level: "Beginner",
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
+  it("adds enrollment and completion statistics to course listings", async () => {
+    mocked.Course.countDocuments.mockResolvedValue(2);
+    mocked.Course.find.mockReturnValue(
+      createFindChain([
+        {
+          _id: { toString: () => "507f1f77bcf86cd799439011" },
+          id: "507f1f77bcf86cd799439011",
+          title: "Course With Progress",
+          summary: "Intro course",
+          difficulty: "BEGINNER",
+          toObject() {
+            return this;
+          },
+        },
+        {
+          _id: { toString: () => "507f1f77bcf86cd799439012" },
+          id: "507f1f77bcf86cd799439012",
+          title: "Course Without Progress",
+          summary: "Empty course",
+          difficulty: "BEGINNER",
+          toObject() {
+            return this;
+          },
+        },
+      ])
+    );
+    mocked.Enrollment.aggregate.mockResolvedValue([
+      {
+        _id: { toString: () => "507f1f77bcf86cd799439011" },
+        enrollmentCount: 4,
+        activeEnrollmentCount: 3,
+        completedEnrollmentCount: 1,
+        averageProgress: 37.6,
+      },
+    ]);
+
+    const res = createRes();
+
+    await getAllCourses({ query: {} }, res);
+
+    expect(mocked.Enrollment.aggregate).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          $match: expect.objectContaining({
+            status: { $in: ["ACTIVE", "COMPLETED"] },
+          }),
+        }),
+      ])
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          courses: [
+            expect.objectContaining({
+              enrollmentCount: 4,
+              activeEnrollmentCount: 3,
+              completedEnrollmentCount: 1,
+              completionRate: 25,
+              averageProgress: 38,
+            }),
+            expect.objectContaining({
+              enrollmentCount: 0,
+              activeEnrollmentCount: 0,
+              completedEnrollmentCount: 0,
+              completionRate: 0,
+              averageProgress: 0,
             }),
           ],
         }),
@@ -773,6 +848,43 @@ describe("courseController", () => {
         ok: true,
         message: "Lesson deleted successfully",
       })
+    );
+  });
+
+  it("allows a super admin to delete a lesson", async () => {
+    mocked.Lesson.findOne.mockReturnValue(
+      createPopulatePromise({
+        _id: "lesson-1",
+        courseId: { ownerId: { toString: () => "owner-1" } },
+      })
+    );
+    mocked.CourseMaterial.find.mockResolvedValue([]);
+    mocked.Task.find.mockReturnValue({
+      distinct: vi.fn().mockResolvedValue([]),
+    });
+    mocked.Section.find.mockResolvedValue([]);
+    mocked.LessonProgress.deleteMany.mockResolvedValue({});
+    mocked.LessonNote.deleteMany.mockResolvedValue({});
+    mocked.LessonDiscussion.deleteMany.mockResolvedValue({});
+    mocked.InteractiveStepSubmission.deleteMany.mockResolvedValue({});
+    mocked.TaskSubmission.deleteMany.mockResolvedValue({});
+    mocked.Task.deleteMany.mockResolvedValue({});
+    mocked.CourseMaterial.deleteMany.mockResolvedValue({});
+    mocked.Lesson.deleteOne.mockResolvedValue({});
+    mocked.Course.findByIdAndUpdate.mockResolvedValue({});
+    const res = createRes();
+
+    await deleteLesson(
+      {
+        params: { courseId: "course-1", lessonId: "lesson-1" },
+        user: { _id: "super-1", role: "SUPER_ADMIN" },
+      },
+      res
+    );
+
+    expect(mocked.Lesson.deleteOne).toHaveBeenCalledWith({ _id: "lesson-1" });
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ ok: true })
     );
   });
 
